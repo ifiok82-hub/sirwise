@@ -1,0 +1,6 @@
+{
+  "name": "SIRWISE",
+  "description": "Global Digital Knowledge Hub powered by AI Professor. Discover professional online courses, downloadable e-books, SaaS tools, business templates, and certified expert consulting.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
