@@ -1365,13 +1365,23 @@ export default function App() {
                         {/* Dual Action Buttons bar */}
                         <div className="p-5 border-t border-zinc-900 bg-zinc-950 flex gap-2">
                           {isUnlocked ? (
-                            <button 
-                              onClick={() => { setCurrentTab('downloads'); }}
-                              className="w-full py-2.5 bg-green-600 hover:bg-green-700 text-white font-black text-xs rounded-xl flex items-center justify-center gap-1.5 transition uppercase tracking-wider font-mono"
-                            >
-                              <Unlock className="w-3.5 h-3.5" />
-                              Unlocked • Download
-                            </button>
+                            <>
+                              <button 
+                                onClick={() => { setCurrentTab('downloads'); }}
+                                className="flex-grow py-2.5 bg-green-600 hover:bg-green-700 text-white font-black text-xs rounded-xl flex items-center justify-center gap-1.5 transition uppercase tracking-wider font-mono"
+                              >
+                                <Unlock className="w-3.5 h-3.5" />
+                                Unlocked • Download
+                              </button>
+                              
+                              <button 
+                                disabled
+                                className="px-3.5 py-2.5 bg-green-900/40 border border-green-800 text-green-400 font-bold text-xs rounded-xl uppercase font-mono"
+                                title="Transaction Verified ✓"
+                              >
+                                Verified ✓
+                              </button>
+                            </>
                           ) : (
                             <>
                               <button 
@@ -1383,10 +1393,9 @@ export default function App() {
                               </button>
                               
                               <button 
-                                onClick={() => {
-                                  alert(`Purchase verification: Initialize standard checkout payments via Paystack, Flutterwave, or Pi GCV wallet. Once completed, your license key releases instantly in your Downloads folder.`);
-                                }}
-                                className="px-3.5 py-2.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-slate-300 font-bold text-xs rounded-xl transition uppercase font-mono"
+                                disabled={true}
+                                className="px-3.5 py-2.5 bg-zinc-900 border border-zinc-850 text-slate-500 font-bold text-xs rounded-xl uppercase font-mono cursor-not-allowed opacity-55"
+                                title="Please execute Buy (🔐) first to initialize gateway verification"
                               >
                                 Unlock
                               </button>
