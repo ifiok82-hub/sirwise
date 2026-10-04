@@ -82,6 +82,85 @@ app.post('/api/chat', async (req: Request, res: Response): Promise<void> => {
   }
 });
 
+// Paystack Server-side Live Initialization
+app.post('/api/payment/paystack/initialize', async (req: Request, res: Response) => {
+  try {
+    const { email, amount, productId } = req.body;
+    const secretKey = process.env.PAYSTACK_SECRET_KEY || 'sk_live_mock_secret_key_9018';
+
+    // Call official Paystack endpoint: https://api.paystack.co/transaction/initialize
+    const paystackRes = await fetch('https://api.paystack.co/transaction/initialize', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${secretKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: email,
+        amount: Math.round(amount * 1600 * 100), // convert USD to NGN Kobo at 1,600 rate
+        currency: 'NGN',
+        callback_url: `${req.headers.origin || 'http://localhost:3000'}/?gateway=paystack&productId=${productId}`
+      })
+    });
+
+    const data: any = await paystackRes.json();
+    if (!paystackRes.ok || !data.status) {
+      throw new Error(data.message || 'Paystack initialization failed');
+    }
+
+    res.json({
+      authorization_url: data.data.authorization_url,
+      reference: data.data.reference
+    });
+  } catch (error: any) {
+    console.error('Paystack initialization error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Flutterwave Server-side Live Initialization
+app.post('/api/payment/flutterwave/initialize', async (req: Request, res: Response) => {
+  try {
+    const { email, name, amount, productId } = req.body;
+    const secretKey = process.env.FLUTTERWAVE_SECRET_KEY || 'FLWSECK-mock_secret_key_8834';
+
+    // Call official Flutterwave endpoint: https://api.flutterwave.com/v3/payments
+    const flwRes = await fetch('https://api.flutterwave.com/v3/payments', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${secretKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        tx_ref: `SIR-${Date.now()}`,
+        amount: amount,
+        currency: 'USD',
+        redirect_url: `${req.headers.origin || 'http://localhost:3000'}/?gateway=flutterwave&productId=${productId}`,
+        customer: {
+          email: email,
+          name: name || 'Sirwise Customer'
+        },
+        customizations: {
+          title: 'SIRWISE Asset License',
+          description: `Acquiring SKU: ${productId}`
+        }
+      })
+    });
+
+    const data: any = await flwRes.json();
+    if (!flwRes.ok || data.status !== 'success') {
+      throw new Error(data.message || 'Flutterwave initialization failed');
+    }
+
+    res.json({
+      link: data.data.link
+    });
+  } catch (error: any) {
+    console.error('Flutterwave initialization error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Secure endpoint to fetch public config keys
 app.get('/api/config', (req: Request, res: Response) => {
   res.json({
