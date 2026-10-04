@@ -3,6 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import { GoogleGenAI } from '@google/genai';
+import fs from 'fs';
 
 dotenv.config();
 
@@ -25,6 +26,88 @@ const ai = new GoogleGenAI({
   },
 });
 
+// Paths to database files
+const DB_FILE = path.resolve(__dirname, 'data', 'db.json');
+const PRODUCTS_FILE = path.resolve(__dirname, 'data', 'products.json');
+
+// Database Access Helpers
+interface DatabaseSchema {
+  users: Array<{
+    id: string;
+    name: string;
+    email: string;
+    phone: string;
+    country: string;
+    status: 'Verified' | 'Revoked' | 'Pending';
+    timestamp: string;
+    device: string;
+  }>;
+  auditLogs: Array<{
+    id: string;
+    action: string;
+    timestamp: string;
+    user: string;
+    severity: 'info' | 'warning' | 'critical';
+  }>;
+  downloads: Array<{
+    id: string;
+    productId: string;
+    productName: string;
+    userEmail: string;
+    timestamp: string;
+  }>;
+}
+
+function getDatabase(): DatabaseSchema {
+  try {
+    if (!fs.existsSync(DB_FILE)) {
+      // Ensure directory exists
+      fs.mkdirSync(path.dirname(DB_FILE), { recursive: true });
+      const initialDb: DatabaseSchema = {
+        users: [],
+        auditLogs: [
+          {
+            id: 'AL-1',
+            action: 'SIRWISE Global Digital Hub database initialized.',
+            timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
+            user: 'SYSTEM',
+            severity: 'info'
+          }
+        ],
+        downloads: []
+      };
+      fs.writeFileSync(DB_FILE, JSON.stringify(initialDb, null, 2), 'utf-8');
+      return initialDb;
+    }
+    const raw = fs.readFileSync(DB_FILE, 'utf-8');
+    return JSON.parse(raw);
+  } catch (err) {
+    console.error('Failed reading database file:', err);
+    return { users: [], auditLogs: [], downloads: [] };
+  }
+}
+
+function saveDatabase(db: DatabaseSchema) {
+  try {
+    fs.mkdirSync(path.dirname(DB_FILE), { recursive: true });
+    fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), 'utf-8');
+  } catch (err) {
+    console.error('Failed writing to database file:', err);
+  }
+}
+
+function getProducts() {
+  try {
+    if (fs.existsSync(PRODUCTS_FILE)) {
+      const raw = fs.readFileSync(PRODUCTS_FILE, 'utf-8');
+      return JSON.parse(raw);
+    }
+  } catch (err) {
+    console.error('Failed loading products list:', err);
+  }
+  return [];
+}
+
 // AI Professor chat proxy endpoint
 app.post('/api/chat', async (req: Request, res: Response): Promise<void> => {
   try {
@@ -35,14 +118,13 @@ app.post('/api/chat', async (req: Request, res: Response): Promise<void> => {
     }
 
     if (!geminiApiKey) {
-      // Return a simulated high-quality response if API Key is not set
+      // Return simulated high-quality response if API Key is not set
       res.json({
-        text: `Greetings from SIRWISE! (Offline Sandbox Mode) I am your AI Professor. To assist you with your question about "${prompt}":\n\n1. **Digital Mastery:** In our Knowledge Hub, we emphasize continuous mastery of core frameworks in technology, business metrics, creative templates, and cloud-based SaaS integrations.\n2. **Your Current Topic:** Expanding on your query, we provide downloadable guides, interactive mockups, and fully verified certifications tailored to these subjects.\n3. **Immediate Action:** To access complete courses, SaaS accounts, and premium templates, unlock this asset in your student dashboard using standard browser gateways or our Pi Browser secure wallets.\n\nHow can I further customize your learning progress today?`,
+        text: `Greetings from SIRWISE! (Offline Sandbox Mode) I am your AI Professor. To assist you with your question about "${prompt}":\n\n1. **Digital Mastery:** In our Knowledge Hub, we emphasize continuous mastery of core frameworks in technology, business metrics, and strategy integrations.\n2. **Your Current Topic:** Expanding on your query, we provide downloadable guides, interactive mockups, and fully verified certifications tailored to these subjects.\n3. **Immediate Action:** To access complete courses, SaaS accounts, and premium templates, unlock this asset in your student dashboard using the verified partner checkout portal.\n\nHow can I further customize your learning progress today?`,
       });
       return;
     }
 
-    // Format chat history or build prompt with system context
     const systemInstruction = 
       "You are the SIRWISE AI Professor, a personalized AI tutor with adaptive learning, instant Q&A, multilingual support, and certification guidance. " +
       "You guide users within SIRWISE, a global digital business and learning hub offering universally in-demand, professional, and profitable digital products. " +
@@ -82,211 +164,210 @@ app.post('/api/chat', async (req: Request, res: Response): Promise<void> => {
   }
 });
 
-// Paystack Server-side Live Initialization
-app.post('/api/payment/paystack/initialize', async (req: Request, res: Response) => {
-  try {
-    const { email, amount, productId } = req.body;
-    const secretKey = process.env.PAYSTACK_SECRET_KEY || 'sk_live_mock_secret_key_9018';
-
-    // Call official Paystack endpoint: https://api.paystack.co/transaction/initialize
-    const paystackRes = await fetch('https://api.paystack.co/transaction/initialize', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${secretKey}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        email: email,
-        amount: Math.round(amount * 1600 * 100), // convert USD to NGN Kobo at 1,600 rate
-        currency: 'NGN',
-        callback_url: `${req.headers.origin || 'http://localhost:3000'}/?gateway=paystack&productId=${productId}`
-      })
-    });
-
-    const data: any = await paystackRes.json();
-    if (!paystackRes.ok || !data.status) {
-      throw new Error(data.message || 'Paystack initialization failed');
-    }
-
-    res.json({
-      authorization_url: data.data.authorization_url,
-      reference: data.data.reference
-    });
-  } catch (error: any) {
-    console.error('Paystack initialization error:', error);
-    res.status(500).json({ error: error.message });
-  }
+// Endpoint to fetch verified products list (No pricing/badges)
+app.get('/api/products', (req: Request, res: Response) => {
+  const products = getProducts();
+  res.json(products);
 });
 
-// Flutterwave Server-side Live Initialization
-app.post('/api/payment/flutterwave/initialize', async (req: Request, res: Response) => {
+// Endpoint to Register and Verify a user
+app.post('/api/verify', (req: Request, res: Response) => {
   try {
-    const { email, name, amount, productId } = req.body;
-    const secretKey = process.env.FLUTTERWAVE_SECRET_KEY || 'FLWSECK-mock_secret_key_8834';
+    const { name, email, phone, country } = req.body;
 
-    // Call official Flutterwave endpoint: https://api.flutterwave.com/v3/payments
-    const flwRes = await fetch('https://api.flutterwave.com/v3/payments', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${secretKey}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        tx_ref: `SIR-${Date.now()}`,
-        amount: amount,
-        currency: 'USD',
-        redirect_url: `${req.headers.origin || 'http://localhost:3000'}/?gateway=flutterwave&productId=${productId}`,
-        customer: {
-          email: email,
-          name: name || 'Sirwise Customer'
-        },
-        customizations: {
-          title: 'SIRWISE Asset License',
-          description: `Acquiring SKU: ${productId}`
-        }
-      })
-    });
-
-    const data: any = await flwRes.json();
-    if (!flwRes.ok || data.status !== 'success') {
-      throw new Error(data.message || 'Flutterwave initialization failed');
-    }
-
-    res.json({
-      link: data.data.link
-    });
-  } catch (error: any) {
-    console.error('Flutterwave initialization error:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Secure server-side real-time Paystack & Flutterwave Payment Verification Endpoint
-app.all('/api/payment/verify', async (req: Request, res: Response): Promise<void> => {
-  try {
-    const gateway = req.query.gateway || req.body.gateway;
-    const reference = req.query.reference || req.body.reference;
-    const transactionId = req.query.transaction_id || req.body.transaction_id || req.query.id || req.body.id;
-    const productId = req.query.productId || req.body.productId;
-
-    if (!gateway) {
-      res.status(400).json({ error: 'Gateway parameter is required' });
+    if (!name || !email || !phone || !country) {
+      res.status(400).json({ success: false, error: 'All fields (Name, Email, Phone, Country) are required' });
       return;
     }
 
-    let isVerified = false;
-    let gatewayResponseData = null;
-
-    if (gateway === 'paystack') {
-      if (!reference) {
-        res.status(400).json({ error: 'Paystack reference is required for verification' });
-        return;
-      }
-      const secretKey = process.env.PAYSTACK_SECRET_KEY || 'sk_live_mock_secret_key_9018';
-      
-      try {
-        const verifyRes = await fetch(`https://api.paystack.co/transaction/verify/${reference}`, {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${secretKey}`,
-            'Content-Type': 'application/json'
-          }
-        });
-        const data: any = await verifyRes.json();
-        gatewayResponseData = data;
-        
-        if (verifyRes.ok && data.status && data.data && data.data.status === 'success') {
-          isVerified = true;
-        } else if (secretKey.includes('mock') || reference.toString().includes('mock')) {
-          // Robust developer test mode fallback if real keys are not supplied in .env yet
-          isVerified = true;
-        }
-      } catch (err) {
-        console.error("Paystack verification endpoint failure:", err);
-        // Fallback for offline testing with mock keys
-        if (secretKey.includes('mock') || reference.toString().includes('mock')) {
-          isVerified = true;
-        }
-      }
-    } else if (gateway === 'flutterwave') {
-      if (!transactionId) {
-        res.status(400).json({ error: 'Flutterwave transaction_id is required for verification' });
-        return;
-      }
-      const secretKey = process.env.FLUTTERWAVE_SECRET_KEY || 'FLWSECK-mock_secret_key_8834';
-      
-      try {
-        const verifyRes = await fetch(`https://api.flutterwave.com/v3/transactions/${transactionId}/verify`, {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${secretKey}`,
-            'Content-Type': 'application/json'
-          }
-        });
-        const data: any = await verifyRes.json();
-        gatewayResponseData = data;
-
-        if (verifyRes.ok && data.status === 'success' && data.data && data.data.status === 'successful') {
-          isVerified = true;
-        } else if (secretKey.includes('mock') || transactionId.toString().includes('mock')) {
-          // Robust developer test mode fallback if real keys are not supplied in .env yet
-          isVerified = true;
-        }
-      } catch (err) {
-        console.error("Flutterwave verification endpoint failure:", err);
-        // Fallback for offline testing with mock keys
-        if (secretKey.includes('mock') || transactionId.toString().includes('mock')) {
-          isVerified = true;
-        }
-      }
-    } else if (gateway === 'paypal') {
-      if (!reference) {
-        res.status(400).json({ error: 'PayPal reference is required for verification' });
-        return;
-      }
-      isVerified = true; // Client captures order successfully, server validates reference identifier
-    } else {
-      res.status(400).json({ error: 'Unsupported payment gateway' });
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      res.status(400).json({ success: false, error: 'Please enter a valid email address' });
       return;
     }
 
-    if (isVerified) {
-      // Support GET callback redirects to the front-end or JSON response
-      if (req.method === 'GET') {
-        const frontEndUrl = req.headers.origin || `${req.secure ? 'https' : 'http'}://${req.headers.host}`;
-        res.redirect(`${frontEndUrl}/?gateway=${gateway}&reference=${reference || transactionId}&productId=${productId}&status=success`);
-      } else {
-        res.json({
-          success: true,
-          message: 'Transaction Verified ✓',
-          data: gatewayResponseData ? gatewayResponseData.data : null
-        });
-      }
+    const db = getDatabase();
+
+    // Check if user already exists
+    let user = db.users.find(u => u.email.toLowerCase() === email.toLowerCase());
+
+    const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19);
+    const userAgent = req.headers['user-agent'] || 'Unknown Device';
+    const deviceType = userAgent.includes('Mobile') ? 'Mobile Device' : 'Desktop Device';
+
+    if (!user) {
+      user = {
+        id: `USR-${Math.floor(100000 + Math.random() * 900000)}`,
+        name,
+        email: email.toLowerCase(),
+        phone,
+        country,
+        status: 'Verified',
+        timestamp,
+        device: `${deviceType} (${req.ip || '127.0.0.1'})`
+      };
+      db.users.push(user);
     } else {
-      if (req.method === 'GET') {
-        const frontEndUrl = req.headers.origin || `${req.secure ? 'https' : 'http'}://${req.headers.host}`;
-        res.redirect(`${frontEndUrl}/?gateway=${gateway}&status=failed`);
-      } else {
-        res.status(400).json({
-          success: false,
-          message: 'Transaction Verification Failed',
-          details: gatewayResponseData ? gatewayResponseData.message : 'Invalid Gateway response'
-        });
-      }
+      // Re-activate as Verified if they were revoked previously, or update details
+      user.name = name;
+      user.phone = phone;
+      user.country = country;
+      user.status = 'Verified';
+      user.timestamp = timestamp;
     }
-  } catch (error: any) {
-    console.error('Payment verification route error:', error);
-    res.status(500).json({ error: error.message });
+
+    // Write compliance audit logs
+    const logId = `AL-${Date.now()}`;
+    db.auditLogs.unshift({
+      id: logId,
+      action: `User "${name}" verified access to SIRWISE Hub. Total unlocked status: GRANTED.`,
+      timestamp,
+      user: email.toLowerCase(),
+      severity: 'info'
+    });
+
+    saveDatabase(db);
+
+    res.json({
+      success: true,
+      message: 'Transaction Verified ✓',
+      user: {
+        email: user.email,
+        name: user.name,
+        phone: user.phone,
+        country: user.country,
+        status: user.status
+      }
+    });
+  } catch (err: any) {
+    console.error('Verification endpoint error:', err);
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
-// Secure endpoint to fetch public config keys
+// Protect /downloads route server-side: if not verified, redirect to verify portal
+app.get('/downloads/:filename', (req: Request, res: Response) => {
+  try {
+    const { filename } = req.params;
+    const { email } = req.query;
+
+    if (!email) {
+      return res.redirect('/?error=not_verified');
+    }
+
+    const db = getDatabase();
+    const verifiedUser = db.users.find(
+      u => u.email.toLowerCase() === (email as string).toLowerCase() && u.status === 'Verified'
+    );
+
+    if (!verifiedUser) {
+      // Record failed unauthorized download attempt to audit log
+      db.auditLogs.unshift({
+        id: `AL-${Date.now()}`,
+        action: `Unauthorized download attempt for "${filename}" without valid verification token.`,
+        timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
+        user: (email as string).toLowerCase() || 'Anonymous',
+        severity: 'critical'
+      });
+      saveDatabase(db);
+      return res.redirect('/?error=not_verified');
+    }
+
+    // Register active download metric
+    const products = getProducts();
+    const product = products.find((p: any) => p.downloadUrl.endsWith(filename));
+    
+    db.downloads.push({
+      id: `DL-${Math.floor(100000 + Math.random() * 900000)}`,
+      productId: product?.id || 'unknown',
+      productName: product?.name || filename,
+      userEmail: (email as string).toLowerCase(),
+      timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19)
+    });
+    
+    db.auditLogs.unshift({
+      id: `AL-${Date.now()}`,
+      action: `Downloaded product file: ${filename}`,
+      timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
+      user: (email as string).toLowerCase(),
+      severity: 'info'
+    });
+    
+    saveDatabase(db);
+
+    const filePath = path.resolve(__dirname, 'public', 'downloads', filename);
+    if (fs.existsSync(filePath)) {
+      res.sendFile(filePath);
+    } else {
+      res.status(404).send('Resource file not found on server.');
+    }
+  } catch (err) {
+    console.error('Download route failure:', err);
+    res.status(500).send('An error occurred while fetching your download package.');
+  }
+});
+
+// Endpoint to verify Admin Pin passcode
+app.post('/api/admin/verify-pin', (req: Request, res: Response) => {
+  const { pin } = req.body;
+  if (pin === 'Goye1967@') {
+    res.json({ success: true });
+  } else {
+    res.status(401).json({ success: false, error: 'Access Denied. Incorrect pin credentials.' });
+  }
+});
+
+// Endpoint to query Admin compliance records from server database
+app.get('/api/admin/records', (req: Request, res: Response) => {
+  const db = getDatabase();
+  res.json({
+    users: db.users,
+    auditLogs: db.auditLogs,
+    downloads: db.downloads
+  });
+});
+
+// Endpoint to Approve or Revoke user's unlocked status instantly
+app.post('/api/admin/users/status', (req: Request, res: Response) => {
+  try {
+    const { userId, status } = req.body;
+    if (!userId || !['Verified', 'Revoked', 'Pending'].includes(status)) {
+      res.status(400).json({ success: false, error: 'Invalid parameters provided' });
+      return;
+    }
+
+    const db = getDatabase();
+    const user = db.users.find(u => u.id === userId);
+
+    if (!user) {
+      res.status(404).json({ success: false, error: 'User registration not found' });
+      return;
+    }
+
+    user.status = status;
+
+    const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19);
+    db.auditLogs.unshift({
+      id: `AL-${Date.now()}`,
+      action: `Administrator manually updated status of "${user.name}" (${user.email}) to ${status}.`,
+      timestamp,
+      user: 'ADMINISTRATOR',
+      severity: status === 'Revoked' ? 'warning' : 'info'
+    });
+
+    saveDatabase(db);
+    res.json({ success: true, message: `User status successfully updated to ${status}.` });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Clean dynamic config response
 app.get('/api/config', (req: Request, res: Response) => {
   res.json({
-    PAYSTACK_PUBLIC_KEY: process.env.PAYSTACK_PUBLIC_KEY || 'pk_live_mock_paystack_key_56781234',
-    FLUTTERWAVE_PUBLIC_KEY: process.env.FLUTTERWAVE_PUBLIC_KEY || 'flwpubk_live_mock_flutterwave_key_43218765',
-    PI_TESTNET_WALLET: process.env.PI_TESTNET_WALLET || 'GBPI-TESTNET-WALLET-ADDRESS-MOCK',
-    PI_MAINNET_KYC_WALLET: process.env.PI_MAINNET_KYC_WALLET || 'GBPI-MAINNET-KYC-WALLET-ADDRESS-MOCK'
+    SYSTEM_MODE: 'VERIFICATION_ONLY',
+    PLATFORM: 'SIRWISE Global Digital Hub',
+    CHARTER: 'RC BN3583773'
   });
 });
 
@@ -294,15 +375,12 @@ app.get('/api/config', (req: Request, res: Response) => {
 const isProd = process.env.NODE_ENV === 'production' || __dirname.includes('dist');
 
 if (!isProd) {
-  // Import dynamically to avoid requiring vite as a prod dependency if running node compiled
   import('vite').then((vite) => {
     vite.createServer({
       server: { middlewareMode: true },
       appType: 'custom',
     }).then((viteServer) => {
       app.use(viteServer.middlewares);
-      
-      // Serve index.html for all SPA routes in dev
       app.use('*', async (req, res, next) => {
         try {
           let template = path.resolve(__dirname, 'index.html');
@@ -315,7 +393,6 @@ if (!isProd) {
     });
   });
 } else {
-  // Serve built files
   app.use(express.static(path.resolve(__dirname, 'dist')));
   app.get('*', (req, res) => {
     res.sendFile(path.resolve(__dirname, 'dist', 'index.html'));
