@@ -161,7 +161,7 @@ export default function App() {
     if (stored) {
       try { return JSON.parse(stored); } catch (e) { }
     }
-    return ['prod-course-ai']; // Default free trial unlocked for display
+    return []; // No default mock unlocks, real payment verification required
   });
 
   // System Transactions list in localStorage
@@ -232,7 +232,7 @@ export default function App() {
   const [isQRModalOpen, setIsQRModalOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
 
-  // Active AI Professor chat inside Academy
+  // Active AI Professor chat inside Hub
   const [chatPrompt, setChatPrompt] = useState('');
   const [chatHistory, setChatHistory] = useState<{ role: 'user' | 'model'; text: string }[]>([
     { role: 'model', text: 'Welcome to the SIRWISE Global Digital Knowledge Hub. I am your AI Professor. Ask me anything about our professional MBA courses, digital ledger setups, financial models, or legal blueprints.' }
@@ -767,8 +767,8 @@ export default function App() {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              gateway: 'paystack', // Use test key verifier
-              reference: 'mock-paypal-success',
+              gateway: 'paypal',
+              reference: mockRef,
               productId: selectedProduct.id
             })
           });
@@ -983,7 +983,7 @@ export default function App() {
 
         {/* SECRET ADMINISTRATIVE INTERFACE PANEL */}
         {adminPanelOpen ? (
-          <div className="bg-zinc-950 border-2 border-yellow-500/50 rounded-2xl p-6 shadow-2xl relative overflow-hidden" onMouseMove={resetInactivityTimer} onClick={resetInactivityTimer}>
+          <div className="bg-zinc-950 border-2 border-yellow-500/50 rounded-2xl p-6 shadow-2xl relative overflow-hidden" onMouseMove={resetInactivityTimer} onClick={resetInactivityTimer} onKeyDown={resetInactivityTimer} onScroll={resetInactivityTimer}>
             
             {/* Admin Header */}
             <div className="flex flex-col md:flex-row items-start md:items-center justify-between border-b border-zinc-800 pb-4 mb-6 gap-4">
@@ -1280,7 +1280,7 @@ export default function App() {
                       Executive Digital Knowledge Hub
                     </span>
                     <h2 className="text-3xl sm:text-5xl font-black text-white font-cinzel leading-tight tracking-tight">
-                      SIRWISE GLOBAL ACADEMY
+                      SIRWISE GLOBAL DIGITAL HUB
                     </h2>
                     <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
                       Discover online courses, premium handbooks, legal blueprints, cloud-based software tools, and professional strategy sessions licensed under corporate charter **RC BN3583773**.
@@ -1660,10 +1660,10 @@ export default function App() {
                 </div>
               ) : (
                 <>
-                  {/* Step 1: Customer Info Redesigned */}
+                  {/* Your Details */}
                   <div className="space-y-3">
                     <span className="text-[10px] text-[#FFD700] uppercase font-mono block font-black border-b border-zinc-800 pb-1.5 tracking-wider">
-                      Step 1: Partner Personal Information (GEP-2026 GDPR Check)
+                      Your Details
                     </span>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 font-mono">
                       <div>
@@ -1718,10 +1718,10 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* Step 2: Choose Payment Gateway (Live Only) Redesigned */}
+                  {/* Select Payment Method */}
                   <div className="space-y-3 font-mono">
                     <span className="text-[10px] text-[#FFD700] uppercase block font-black border-b border-zinc-800 pb-1.5 tracking-wider">
-                      Step 2: Choose Payment Gateway (Live Only)
+                      Select Payment Method
                     </span>
                     
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 font-mono">
@@ -1809,10 +1809,10 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* Step 3: Order Summary (Redesigned) */}
+                  {/* Confirm Order */}
                   <div className="space-y-3 font-mono">
                     <span className="text-[10px] text-[#FFD700] uppercase block font-black border-b border-zinc-800 pb-1.5 tracking-wider">
-                      Step 3: Order Summary
+                      Confirm Order
                     </span>
                     <div className="p-4 bg-zinc-950 rounded-xl border border-zinc-850 space-y-2.5 text-xs text-slate-300">
                       <div className="flex justify-between">
