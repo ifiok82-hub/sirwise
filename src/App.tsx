@@ -486,74 +486,66 @@ export default function App() {
     <div className="bg-[#0B132B] min-h-screen flex flex-col font-sans text-slate-200" onMouseMove={resetInactivityTimer} onClick={resetInactivityTimer} onKeyDown={resetInactivityTimer} onScroll={resetInactivityTimer}>
       
       {/* CORPORATE EXECUTIVE HEADER */}
-      <header className="border-b border-zinc-850 bg-zinc-950 sticky top-0 z-50 px-4 py-3 shadow-xl">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-3">
-          
-          {/* Logo element with secret 5 taps logic */}
-          <div 
-            onClick={handleLogoTap} 
-            className="flex items-center gap-3 cursor-pointer select-none transition-transform active:scale-95 group"
-            title="Administrative Compliance desk access"
+      <header className="bg-black border-b border-zinc-900 py-4 px-4 sticky top-0 z-50 flex items-center justify-center shadow-lg relative">
+        {/* Left: profile details if logged in */}
+        {currentUser.isLoggedIn && (
+          <button 
+            onClick={() => setIsProfileModalOpen(true)}
+            className="absolute left-4 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-zinc-800 bg-zinc-900 text-white hover:border-[#FFD700]/30 transition"
           >
-            <SirwiseLogo className="h-10 w-auto" showText={true} />
-            <div className="border-l border-zinc-800 pl-3 hidden sm:block">
-              <span className="text-[10px] text-[#FFD700] tracking-widest font-mono font-bold block">
-                KNOWLEDGE PORTAL
-              </span>
-              <span className="text-[9px] text-slate-400 font-mono">RC BN3583778</span>
+            <User className="w-3.5 h-3.5 text-[#FFD700]" />
+            <span className="font-mono text-[10px] hidden sm:inline">{currentUser.name || 'Profile'}</span>
+          </button>
+        )}
+
+        {/* Center: Centered Logo with secret 5 taps logic */}
+        <div 
+          onClick={handleLogoTap} 
+          className="cursor-pointer select-none transition-transform active:scale-95 flex items-center justify-center"
+          title="Administrative Compliance desk access"
+        >
+          <SirwiseLogo className="h-10 w-auto" showText={true} />
+        </div>
+
+        {/* Right: verified status */}
+        <div className="absolute right-4 flex items-center gap-2">
+          {hasAccess && (
+            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-green-500/10 border border-green-500/20 text-green-400 font-mono font-bold text-[10px]">
+              <ShieldCheck className="w-3.5 h-3.5" />
+              <span className="hidden md:inline">{isAdmin ? 'ADMIN GRANTED ✓' : 'VERIFIED ✓'}</span>
+              <span className="md:hidden">✓</span>
             </div>
-          </div>
-
-          {/* User profile identifier or verification prompt */}
-          <div className="flex items-center gap-4 text-xs">
-            {hasAccess && (
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-green-500/10 border border-green-500/20 text-green-400 font-mono font-bold">
-                <ShieldCheck className="w-4 h-4" />
-                <span>{isAdmin ? 'ADMINISTRATIVE GRANTED ✓' : 'PARTNER VERIFIED ✓'}</span>
-              </div>
-            )}
-
-            {currentUser.isLoggedIn && (
-              <button 
-                onClick={() => setIsProfileModalOpen(true)}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-zinc-800 bg-zinc-900 text-white hover:border-[#FFD700]/30 transition"
-              >
-                <User className="w-4 h-4 text-[#FFD700]" />
-                <span className="font-mono text-xs hidden md:inline">{currentUser.name || 'Anonymous User'}</span>
-              </button>
-            )}
-          </div>
-
+          )}
         </div>
       </header>
 
       {/* SEGMENTED NAVIGATION BAR */}
-      <nav className="bg-zinc-950/60 border-b border-zinc-900 py-3 px-4 sticky top-[65px] z-40 backdrop-blur-md">
-        <div className="max-w-4xl mx-auto flex items-center justify-center gap-2">
+      <nav className="bg-zinc-950/80 border-b border-zinc-900 py-3 px-4 sticky top-[72px] z-40 backdrop-blur-md overflow-x-auto whitespace-nowrap">
+        <div className="max-w-xl mx-auto flex items-center justify-center gap-2">
           
           <button
             onClick={() => { setCurrentTab('marketplace'); setAdminPanelOpen(false); }}
-            className={`flex-1 max-w-[200px] flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-bold transition text-xs uppercase tracking-wider ${
+            className={`flex-1 min-w-[130px] flex items-center justify-center gap-2 px-5 py-3 rounded-xl font-black transition text-xs uppercase tracking-wider ${
               currentTab === 'marketplace' && !adminPanelOpen
-                ? 'bg-gradient-to-r from-amber-500 to-yellow-600 text-black shadow-lg shadow-yellow-500/10'
+                ? 'bg-[#F59E0B] text-black shadow-lg shadow-yellow-500/10'
                 : 'text-slate-400 hover:text-white hover:bg-zinc-900'
             }`}
           >
-            <BookOpen className="w-3.5 h-3.5" />
-            Knowledge Hub
+            <BookOpen className="w-4 h-4" />
+            <span>KNOWLEDGE HUB</span>
           </button>
 
           <button
             onClick={() => { setCurrentTab('downloads'); setAdminPanelOpen(false); }}
-            className={`flex-1 max-w-[200px] flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-bold transition text-xs uppercase tracking-wider relative ${
+            className={`flex-1 min-w-[130px] flex items-center justify-center gap-2 px-5 py-3 rounded-xl font-black transition text-xs uppercase tracking-wider relative ${
               currentTab === 'downloads' && !adminPanelOpen
-                ? 'bg-gradient-to-r from-amber-500 to-yellow-600 text-black shadow-lg shadow-yellow-500/10'
+                ? 'bg-[#F59E0B] text-black shadow-lg shadow-yellow-500/10'
                 : 'text-slate-400 hover:text-white hover:bg-zinc-900'
             }`}
           >
-            <Download className="w-3.5 h-3.5" />
-            Downloads
-            {isVerified && (
+            <Download className="w-4 h-4" />
+            <span>DOWNLOADS</span>
+            {hasAccess && (
               <span className="absolute -top-1 -right-1 w-5 h-5 bg-yellow-400 text-black font-mono font-black text-[10px] rounded-full flex items-center justify-center border-2 border-zinc-950">
                 {programmesList.length}
               </span>
@@ -562,14 +554,14 @@ export default function App() {
 
           <button
             onClick={() => { setCurrentTab('professor'); setAdminPanelOpen(false); }}
-            className={`flex-1 max-w-[200px] flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-bold transition text-xs uppercase tracking-wider ${
+            className={`flex-1 min-w-[130px] flex items-center justify-center gap-2 px-5 py-3 rounded-xl font-black transition text-xs uppercase tracking-wider ${
               currentTab === 'professor' && !adminPanelOpen
-                ? 'bg-gradient-to-r from-amber-500 to-yellow-600 text-black shadow-lg shadow-yellow-500/10'
+                ? 'bg-[#F59E0B] text-black shadow-lg shadow-yellow-500/10'
                 : 'text-slate-400 hover:text-white hover:bg-zinc-900'
             }`}
           >
-            <Sparkles className="w-3.5 h-3.5" />
-            AI Professor
+            <Sparkles className="w-4 h-4" />
+            <span>AI PROFESSOR</span>
           </button>
 
         </div>
@@ -889,16 +881,16 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Clean interactive filters */}
-                <div className="flex items-center justify-center flex-wrap gap-1.5 p-1.5 bg-zinc-950 rounded-xl max-w-3xl mx-auto border border-zinc-900">
+                {/* Clean interactive filters - structured in 2 rows */}
+                <div className="flex flex-wrap items-center justify-center gap-2 max-w-xl mx-auto p-1 bg-zinc-950/40 rounded-xl">
                   {(['all', 'courses', 'ebooks', 'templates', 'saas', 'assets', 'consulting'] as const).map((cat) => (
                     <button
                       key={cat}
                       onClick={() => setMarketCategory(cat)}
-                      className={`px-3.5 py-2 text-xs font-bold rounded-lg transition-all ${
+                      className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${
                         marketCategory === cat
-                          ? 'bg-gradient-to-r from-amber-500 to-yellow-600 text-black font-black shadow'
-                          : 'text-slate-400 hover:text-white hover:bg-zinc-900'
+                          ? 'bg-[#F59E0B] text-black font-extrabold shadow-lg shadow-yellow-500/10'
+                          : 'text-slate-400 hover:text-white hover:bg-zinc-900/60'
                       }`}
                     >
                       {cat === 'all' ? 'All Portals' : cat.toUpperCase()}
