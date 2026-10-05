@@ -14,7 +14,7 @@ export default defineConfig(() => {
         includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'icon.svg'],
         manifest: {
           id: '/',
-          name: 'SIRWISE AI Web3 Academy',
+          name: 'SIRWISE Global Digital Hub',
           short_name: 'SIRWISE',
           description: 'Global Digital Knowledge Hub powered by AI Professor.',
           theme_color: '#000000',

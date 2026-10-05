@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { usePWAInstall } from './usePWAInstall';
 import { SirwiseLogo } from './components/SirwiseLogo';
+import countriesData from '../data/countries.json';
 
 // Digital Product Interface loaded dynamically from Backend
 interface DigitalProduct {
@@ -132,6 +133,8 @@ export default function App() {
   const [billingName, setBillingName] = useState('');
   const [billingPhone, setBillingPhone] = useState('');
   const [billingCountry, setBillingCountry] = useState('');
+  const [countrySearch, setCountrySearch] = useState('');
+  const [countryDropdownOpen, setCountryDropdownOpen] = useState(false);
 
   // Selected verification product state
   const [selectedProduct, setSelectedProduct] = useState<DigitalProduct | null>(null);
@@ -165,6 +168,49 @@ export default function App() {
         setIsLoadingProducts(false);
       });
   }, []);
+
+  const [isPiBrowser, setIsPiBrowser] = useState(false);
+
+  // Pi Browser Adapter & Auto-Fill authentication routine
+  useEffect(() => {
+    const checkPi = typeof window !== 'undefined' && 
+                    !!(window as any).Pi && 
+                    window.navigator.userAgent.toLowerCase().includes('pibrowser');
+    setIsPiBrowser(checkPi);
+    if (checkPi) {
+      try {
+        const Pi = (window as any).Pi;
+        Pi.init({ version: "2.0" });
+        console.log("Pi SDK initialized in Pi Browser. Dynamic verification available.");
+      } catch (err) {
+        console.error("Pi SDK crash protection:", err);
+      }
+    }
+  }, []);
+
+  // Secure Manual/On-demand Pi Network Authentication to prevent 120s promise timeouts
+  const handlePiAuth = async () => {
+    if (typeof window === 'undefined' || !(window as any).Pi) {
+      alert("Pi Network SDK is not available outside of Pi Browser.");
+      return;
+    }
+    try {
+      const Pi = (window as any).Pi;
+      const auth = await Pi.authenticate(['username', 'payments'], (payment: any) => {
+        console.warn("Incomplete payments:", payment);
+      });
+      if (auth && auth.user) {
+        const piUsername = auth.user.username;
+        setBillingName(piUsername || '');
+        setBillingEmail(`${piUsername}@pi.browser`);
+        setBillingPhone("PI-BROWSER-AUTH");
+        setBillingCountry("Nigeria");
+      }
+    } catch (err: any) {
+      console.error("Pi authentication error:", err);
+      alert("Could not sync Pi profile automatically. Please fill details manually.");
+    }
+  };
 
   // Sync verification status from server on mount
   useEffect(() => {
@@ -947,7 +993,7 @@ export default function App() {
                                   className="flex-grow py-2.5 bg-[#FFD700] hover:bg-yellow-500 text-black font-extrabold text-xs rounded-xl flex items-center justify-center gap-1.5 transition uppercase tracking-widest font-mono"
                                 >
                                   <Lock className="w-3.5 h-3.5" />
-                                  Verify to Unlock (🔐)
+                                  BUY ( 🔐 )
                                 </button>
                                 
                                 <button 
@@ -955,7 +1001,7 @@ export default function App() {
                                   className="px-3.5 py-2.5 bg-zinc-900 border border-zinc-850 text-slate-500 font-bold text-xs rounded-xl uppercase font-mono cursor-not-allowed opacity-55"
                                   title="Please submit verification credentials first"
                                 >
-                                  Unlock
+                                  UNLOCK
                                 </button>
                               </>
                             )}
@@ -1219,6 +1265,27 @@ export default function App() {
                 </div>
               ) : (
                 <>
+                  {/* Pi Browser On-Demand Auth Trigger */}
+                  {isPiBrowser && (
+                    <div className="p-3.5 bg-yellow-500/10 border border-yellow-500/30 rounded-xl space-y-2 text-center font-mono">
+                      <div className="flex items-center justify-center gap-2 text-[11px] text-[#FFD700] font-bold">
+                        <Smartphone className="w-4 h-4 animate-pulse" />
+                        <span>PI BROWSER DETECTED</span>
+                      </div>
+                      <p className="text-[10px] text-slate-300 leading-relaxed">
+                        Authorize via Pi Network to automatically pre-fill and verify your partner profile securely.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={handlePiAuth}
+                        className="w-full py-2 bg-yellow-500 hover:bg-yellow-400 text-black font-black text-[10px] rounded-lg tracking-wider uppercase transition flex items-center justify-center gap-1.5"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin-slow" />
+                        SYNC PI NETWORK CREDENTIALS
+                      </button>
+                    </div>
+                  )}
+
                   {/* Your Details */}
                   <div className="space-y-3">
                     <span className="text-[10px] text-[#FFD700] uppercase font-mono block font-black border-b border-zinc-800 pb-1.5 tracking-wider">
@@ -1258,25 +1325,74 @@ export default function App() {
                           required
                         />
                       </div>
-                      <div>
+                      <div className="relative">
                         <label className="text-[10px] text-slate-400 block mb-1">Resident Country</label>
-                        <select
-                          value={billingCountry}
-                          onChange={(e) => setBillingCountry(e.target.value)}
-                          className="w-full bg-black border border-zinc-850 rounded-lg px-3 py-2 text-xs text-white focus:border-[#FFD700] outline-none"
-                          required
+                        <button
+                          type="button"
+                          onClick={() => setCountryDropdownOpen(!countryDropdownOpen)}
+                          className="w-full bg-black border border-zinc-850 rounded-lg px-3 py-2.5 text-xs text-white text-left flex items-center justify-between focus:border-[#FFD700] outline-none select-none"
                         >
-                          <option value="" disabled>Select country</option>
-                          <option value="Nigeria">🇳🇬 Nigeria</option>
-                          <option value="Ghana">🇬🇭 Ghana</option>
-                          <option value="United States">🇺🇸 United States</option>
-                          <option value="United Kingdom">🇬🇧 United Kingdom</option>
-                          <option value="Canada">🇨🇦 Canada</option>
-                          <option value="South Africa">🇿🇦 South Africa</option>
-                          <option value="Kenya">🇰🇪 Kenya</option>
-                          <option value="Germany">🇩🇪 Germany</option>
-                          <option value="France">🇫🇷 France</option>
-                        </select>
+                          <span className="flex items-center gap-2">
+                            {billingCountry ? (
+                              <>
+                                <span>
+                                  {countriesData.find(c => c.name === billingCountry)?.flag}
+                                </span>
+                                <span>{billingCountry}</span>
+                              </>
+                            ) : (
+                              <span className="text-slate-500">Select Country</span>
+                            )}
+                          </span>
+                          <span className="text-slate-500 text-[10px]">▼</span>
+                        </button>
+
+                        {countryDropdownOpen && (
+                          <>
+                            <div 
+                              className="fixed inset-0 z-[999998]" 
+                              onClick={() => {
+                                setCountryDropdownOpen(false);
+                                setCountrySearch('');
+                              }}
+                            />
+                            <div className="absolute left-0 right-0 mt-1 bg-zinc-950 border border-zinc-800 rounded-lg shadow-2xl z-[999999] p-2 max-h-60 flex flex-col">
+                              <input
+                                type="text"
+                                value={countrySearch}
+                                onChange={(e) => setCountrySearch(e.target.value)}
+                                placeholder="Type to search country..."
+                                className="w-full bg-black border border-zinc-900 rounded px-2.5 py-1.5 text-xs text-white placeholder-slate-700 outline-none focus:border-[#FFD700] mb-2 font-mono"
+                                autoFocus
+                              />
+                              <div className="overflow-y-auto flex-grow space-y-0.5 custom-scrollbar max-h-40">
+                                {countriesData
+                                  .filter(c => c.name.toLowerCase().includes(countrySearch.toLowerCase()))
+                                  .map(c => (
+                                    <button
+                                      key={c.code}
+                                      type="button"
+                                      onClick={() => {
+                                        setBillingCountry(c.name);
+                                        setCountryDropdownOpen(false);
+                                        setCountrySearch('');
+                                      }}
+                                      className="w-full text-left px-2.5 py-1.5 text-xs text-slate-300 hover:text-white hover:bg-[#FFD700]/10 rounded flex items-center gap-2 transition"
+                                    >
+                                      <span className="text-sm shrink-0">{c.flag}</span>
+                                      <span className="truncate">{c.name}</span>
+                                      <span className="text-[9px] text-slate-600 font-mono ml-auto shrink-0">{c.dialCode}</span>
+                                    </button>
+                                  ))}
+                                {countriesData.filter(c => c.name.toLowerCase().includes(countrySearch.toLowerCase())).length === 0 && (
+                                  <div className="text-center py-4 text-xs text-slate-600 font-mono">
+                                    No countries match search
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </>
+                        )}
                       </div>
                     </div>
                   </div>
