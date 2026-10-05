@@ -27,6 +27,8 @@ import {
   Users
 } from 'lucide-react';
 import { usePWAInstall } from './usePWAInstall';
+import { usePaystackPayment } from 'react-paystack';
+import { useFlutterwave, closePaymentModal } from 'flutterwave-react-v3';
 import { SirwiseLogo } from './components/SirwiseLogo';
 import countriesData from '../data/countries.json';
 
@@ -156,6 +158,53 @@ export default function App() {
   const [isSubmittingCheckout, setIsSubmittingCheckout] = useState(false);
   const [checkoutStatus, setCheckoutStatus] = useState<{ success?: boolean; message?: string } | null>(null);
 
+  // Paystack & Flutterwave Payment Configuration
+  const paystackConfig = {
+    reference: `REF-${Date.now()}`,
+    email: billingEmail,
+    amount: 16000 * 100, // Amount in kobo
+    publicKey: import.meta.env.VITE_PAYSTACK_PUBLIC_KEY || 'pk_test_placeholder',
+  };
+  const initializePaystack = usePaystackPayment(paystackConfig);
+
+  const flwConfig = {
+    public_key: import.meta.env.VITE_FLW_PUBLIC_KEY || 'FLWPUBK_TEST-placeholder',
+    tx_ref: `REF-${Date.now()}`,
+    amount: 16000,
+    currency: 'NGN',
+    payment_options: 'card,mobilemoney,ussd',
+    customer: { email: billingEmail, phone_number: billingPhone, name: billingName },
+    customizations: { title: 'SIRWISE Hub', description: 'MBA Program', logo: '' },
+  };
+  const handleFlutterwavePayment = useFlutterwave(flwConfig);
+
+  // Server-side Payment Verification
+  const verifyPayment = async (payload: any) => {
+    setIsSubmittingCheckout(true);
+    try {
+      const res = await fetch('/api/verify-payment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (data.success) {
+        setCheckoutStatus({ success: true, message: 'Transaction Verified ✓' });
+        setIsVerified(true);
+        localStorage.setItem('sirwise_hub_verified', 'true');
+        setCurrentUser(data.user);
+        localStorage.setItem('sirwise_hub_user', JSON.stringify(data.user));
+      } else {
+        alert(data.error || 'Payment verification failed');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Payment verification error');
+    } finally {
+      setIsSubmittingCheckout(false);
+    }
+  };
+
   // General profile modification modal state
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
 
@@ -225,6 +274,31 @@ export default function App() {
       alert("Could not sync Pi profile automatically. Please fill details manually.");
     }
   };
+
+  const handlePiPayment = async () => {
+     if (!selectedProduct) return;
+     try {
+       const Pi = (window as any).Pi;
+       const payment = await Pi.createPayment({
+         amount: 10,
+         memo: `Payment for ${selectedProduct.name}`,
+         metadata: { productId: selectedProduct.id },
+       }, {
+         onReadyForServerApproval: (paymentId: string) => {
+             // Send paymentId to backend /api/verify-payment
+             verifyPayment({ reference: paymentId, provider: 'pi', name: billingName, email: billingEmail, phone: billingPhone, country: billingCountry });
+         },
+         onReadyForServerCompletion: (paymentId: string, txid: string) => {
+             console.log("Payment completed", txid);
+         },
+         onCancel: (paymentId: string) => {},
+         onError: (error: any, payment: any) => { console.error(error); },
+       });
+     } catch (err) {
+       console.error(err);
+       alert("Pi Payment failed");
+     }
+  }
 
   // Sync verification status from server on mount
   useEffect(() => {
@@ -419,8 +493,8 @@ export default function App() {
     setBillingCountry(currentUser.country || '');
   };
 
-  // Perform secure registration verification request on server database
-  const handleCheckoutSubmit = async (e: React.FormEvent) => {
+  // Perform secure payment verification request
+  const handleCheckoutSubmit = async (e: React.FormEvent, provider: 'paystack' | 'flutterwave') => {
     e.preventDefault();
     if (!selectedProduct) return;
 
@@ -429,50 +503,21 @@ export default function App() {
       return;
     }
 
-    setIsSubmittingCheckout(true);
-    setCheckoutStatus(null);
-
-    try {
-      const res = await fetch('/api/verify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: billingName,
-          email: billingEmail,
-          phone: billingPhone,
-          country: billingCountry
-        })
-      });
-
-      const data = await res.json();
-
-      if (res.ok && data.success) {
-        const verifiedUser: UserProfile = {
-          email: data.user.email,
-          name: data.user.name,
-          phone: data.user.phone,
-          country: data.user.country,
-          isLoggedIn: true,
-          role: 'buyer'
-        };
-
-        setCurrentUser(verifiedUser);
-        localStorage.setItem('sirwise_hub_user', JSON.stringify(verifiedUser));
-        localStorage.setItem('sirwise_hub_verified', 'true');
-        setIsVerified(true);
-        
-        setCheckoutStatus({
-          success: true,
-          message: 'Transaction Verified ✓'
+    if (provider === 'paystack') {
+        initializePaystack({
+            onSuccess: (ref: any) => verifyPayment({ reference: ref.reference, provider: 'paystack', name: billingName, email: billingEmail, phone: billingPhone, country: billingCountry }),
+            onClose: () => {}
         });
-      } else {
-        alert(data.error || "Verification request declined by corporate register.");
-      }
-    } catch (err) {
-      console.error(err);
-      alert("Verification nodes currently busy. Please check back in a few seconds.");
-    } finally {
-      setIsSubmittingCheckout(false);
+    } else {
+        handleFlutterwavePayment({
+            callback: (response: any) => {
+                closePaymentModal();
+                if (response.status === 'successful') {
+                    verifyPayment({ reference: response.transaction_id, provider: 'flutterwave', name: billingName, email: billingEmail, phone: billingPhone, country: billingCountry });
+                }
+            },
+            onClose: () => {}
+        });
     }
   };
 
@@ -1215,7 +1260,7 @@ export default function App() {
             </div>
 
             {/* Modal Body */}
-            <form onSubmit={handleCheckoutSubmit} className="p-5 space-y-6">
+            <form className="p-5 space-y-6">
               
               {checkoutStatus ? (
                 <div className="space-y-4 text-center py-6 font-mono">
@@ -1225,9 +1270,6 @@ export default function App() {
                   <h5 className="text-lg font-black uppercase text-green-400">
                     {checkoutStatus.message}
                   </h5>
-                  <p className="text-xs text-slate-300 leading-relaxed px-4">
-                    Your partner profile has been registered and verified on the server-side database. All digital blueprints, courses, templates, and software codes are now fully unlocked.
-                  </p>
                   <button 
                     type="button"
                     onClick={() => {
@@ -1420,31 +1462,51 @@ export default function App() {
                   </div>
 
                   {/* Action buttons (Verify and Cancel) */}
-                  <div className="flex gap-3 font-mono">
+                  <div className="flex flex-col gap-3 font-mono">
                     <button 
                       type="button"
-                      onClick={() => setCheckoutModalOpen(false)}
-                      className="flex-1 py-3 text-xs font-black uppercase text-slate-300 rounded-xl border-2 border-slate-700 hover:bg-zinc-900 transition text-center"
+                      onClick={() => {
+                        const e = { preventDefault: () => {} } as React.FormEvent;
+                        handleCheckoutSubmit(e, 'paystack');
+                      }}
+                      disabled={isSubmittingCheckout}
+                      className="w-full py-3 bg-[#FFD700] hover:bg-yellow-500 text-black font-black text-xs rounded-xl tracking-wider uppercase transition flex items-center justify-center gap-2"
                     >
-                      Cancel
+                      {isSubmittingCheckout ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Lock className="w-4 h-4" />}
+                      Pay with Paystack
                     </button>
                     
                     <button 
-                      type="submit"
+                      type="button"
+                      onClick={() => {
+                        const e = { preventDefault: () => {} } as React.FormEvent;
+                        handleCheckoutSubmit(e, 'flutterwave');
+                      }}
                       disabled={isSubmittingCheckout}
-                      className="flex-grow py-3 bg-[#FFD700] hover:bg-yellow-500 text-black font-black text-xs rounded-xl tracking-wider uppercase transition flex items-center justify-center gap-2"
+                      className="w-full py-3 bg-zinc-800 hover:bg-zinc-700 text-white font-black text-xs rounded-xl tracking-wider uppercase transition flex items-center justify-center gap-2"
                     >
-                      {isSubmittingCheckout ? (
-                        <>
-                          <RefreshCw className="w-4 h-4 animate-spin" />
-                          Processing Order...
-                        </>
-                      ) : (
-                        <>
-                          <ShieldCheck className="w-4 h-4" />
-                          BUY & UNLOCK ACCESS
-                        </>
-                      )}
+                      {isSubmittingCheckout ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Lock className="w-4 h-4" />}
+                      Pay with Flutterwave
+                    </button>
+
+                    {isPiBrowser && (
+                      <button 
+                        type="button"
+                        onClick={handlePiPayment}
+                        disabled={isSubmittingCheckout}
+                        className="w-full py-3 bg-white hover:bg-zinc-200 text-black font-black text-xs rounded-xl tracking-wider uppercase transition flex items-center justify-center gap-2"
+                      >
+                        {isSubmittingCheckout ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Smartphone className="w-4 h-4" />}
+                        Pay with Pi
+                      </button>
+                    )}
+
+                    <button 
+                      type="button"
+                      onClick={() => setCheckoutModalOpen(false)}
+                      className="w-full py-3 text-xs font-black uppercase text-slate-300 rounded-xl border-2 border-slate-700 hover:bg-zinc-900 transition text-center"
+                    >
+                      Cancel
                     </button>
                   </div>
                 </>

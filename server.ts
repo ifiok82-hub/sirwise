@@ -170,77 +170,75 @@ app.get('/api/products', (req: Request, res: Response) => {
   res.json(products);
 });
 
-// Endpoint to Register and Verify a user
-app.post('/api/verify', (req: Request, res: Response) => {
+// Endpoint to verify payment transaction
+app.post('/api/verify-payment', async (req: Request, res: Response) => {
   try {
-    const { name, email, phone, country } = req.body;
+    const { reference, provider, name, email, phone, country } = req.body;
 
-    if (!name || !email || !phone || !country) {
-      res.status(400).json({ success: false, error: 'All fields (Name, Email, Phone, Country) are required' });
+    if (!reference || !provider || !name || !email || !phone || !country) {
+      res.status(400).json({ success: false, error: 'Missing required payment details' });
       return;
     }
 
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      res.status(400).json({ success: false, error: 'Please enter a valid email address' });
-      return;
+    // Verify with provider server-side
+    let isVerified = false;
+    if (provider === 'paystack') {
+        const response = await fetch(`https://api.paystack.co/transaction/verify/${reference}`, {
+            headers: { Authorization: `Bearer ${process.env.PAYSTACK_LIVE_SECRET}` }
+        });
+        const data = await response.json();
+        isVerified = data.status && data.data.status === 'success';
+    } else if (provider === 'flutterwave') {
+        const response = await fetch(`https://api.flutterwave.com/v3/transactions/${reference}/verify`, {
+            headers: { Authorization: `Bearer ${process.env.FLUTTERWAVE_LIVE_SECRET}` }
+        });
+        const data = await response.json();
+        isVerified = data.status === 'success' && data.data.status === 'successful';
+    }
+
+    if (!isVerified) {
+        res.status(400).json({ success: false, error: 'Payment verification failed' });
+        return;
     }
 
     const db = getDatabase();
-
-    // Check if user already exists
-    let user = db.users.find(u => u.email.toLowerCase() === email.toLowerCase());
-
     const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19);
     const userAgent = req.headers['user-agent'] || 'Unknown Device';
     const deviceType = userAgent.includes('Mobile') ? 'Mobile Device' : 'Desktop Device';
-
+    
+    let user = db.users.find(u => u.email.toLowerCase() === email.toLowerCase());
     if (!user) {
-      user = {
-        id: `USR-${Math.floor(100000 + Math.random() * 900000)}`,
-        name,
-        email: email.toLowerCase(),
-        phone,
-        country,
-        status: 'Verified',
-        timestamp,
-        device: `${deviceType} (${req.ip || '127.0.0.1'})`
-      };
-      db.users.push(user);
+        user = {
+            id: `USR-${Math.floor(100000 + Math.random() * 900000)}`,
+            name,
+            email: email.toLowerCase(),
+            phone,
+            country,
+            status: 'Verified',
+            timestamp,
+            device: `${deviceType} (${req.ip || '127.0.0.1'})`
+        };
+        db.users.push(user);
     } else {
-      // Re-activate as Verified if they were revoked previously, or update details
-      user.name = name;
-      user.phone = phone;
-      user.country = country;
-      user.status = 'Verified';
-      user.timestamp = timestamp;
+        user.status = 'Verified';
+        user.name = name;
+        user.phone = phone;
+        user.country = country;
     }
 
-    // Write compliance audit logs
-    const logId = `AL-${Date.now()}`;
     db.auditLogs.unshift({
-      id: logId,
-      action: `User "${name}" verified access to SIRWISE Hub. Total unlocked status: GRANTED.`,
-      timestamp,
-      user: email.toLowerCase(),
-      severity: 'info'
+        id: `AL-${Date.now()}`,
+        action: `Payment verified via ${provider}. User "${name}" unlocked access.`,
+        timestamp,
+        user: email.toLowerCase(),
+        severity: 'info'
     });
 
     saveDatabase(db);
+    res.json({ success: true, message: 'Transaction Verified ✓', user });
 
-    res.json({
-      success: true,
-      message: 'Transaction Verified ✓',
-      user: {
-        email: user.email,
-        name: user.name,
-        phone: user.phone,
-        country: user.country,
-        status: user.status
-      }
-    });
   } catch (err: any) {
-    console.error('Verification endpoint error:', err);
+    console.error('Payment verification endpoint error:', err);
     res.status(500).json({ success: false, error: err.message });
   }
 });
