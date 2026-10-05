@@ -259,8 +259,9 @@ app.get('/downloads/:filename', (req: Request, res: Response) => {
     const verifiedUser = db.users.find(
       u => u.email.toLowerCase() === (email as string).toLowerCase() && u.status === 'Verified'
     );
+    const isAdmin = (email as string).toLowerCase() === 'ifiok82@gmail.com';
 
-    if (!verifiedUser) {
+    if (!verifiedUser && !isAdmin) {
       // Record failed unauthorized download attempt to audit log
       db.auditLogs.unshift({
         id: `AL-${Date.now()}`,

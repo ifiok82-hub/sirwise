@@ -93,7 +93,18 @@ export default function App() {
     if (stored) {
       try {
         const parsed = JSON.parse(stored);
-        return { ...parsed, isLoggedIn: true };
+        // Purge old mock user cache from previous sessions if present
+        if (
+          parsed.name === "Professional Partner" || 
+          parsed.email === "member@sirwise.store" ||
+          parsed.phone === "08033584736" ||
+          parsed.phone === "PI-BROWSER-AUTH"
+        ) {
+          localStorage.removeItem('sirwise_hub_user');
+          localStorage.removeItem('sirwise_hub_verified');
+        } else {
+          return { ...parsed, isLoggedIn: true };
+        }
       } catch (e) { }
     }
     return {
@@ -110,6 +121,9 @@ export default function App() {
   const [isVerified, setIsVerified] = useState<boolean>(() => {
     return localStorage.getItem('sirwise_hub_verified') === 'true';
   });
+
+  const isAdmin = currentUser.role === 'admin' || currentUser.email.toLowerCase() === 'ifiok82@gmail.com';
+  const hasAccess = isVerified || isAdmin;
 
   // Admin and inactivity lockout tracking
   const [adminPassword, setAdminPassword] = useState('');
@@ -492,23 +506,11 @@ export default function App() {
 
           {/* User profile identifier or verification prompt */}
           <div className="flex items-center gap-4 text-xs">
-            {isVerified ? (
+            {hasAccess && (
               <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-green-500/10 border border-green-500/20 text-green-400 font-mono font-bold">
                 <ShieldCheck className="w-4 h-4" />
-                <span>PARTNER VERIFIED ✓</span>
+                <span>{isAdmin ? 'ADMINISTRATIVE GRANTED ✓' : 'PARTNER VERIFIED ✓'}</span>
               </div>
-            ) : (
-              <button 
-                onClick={() => {
-                  if (programmesList.length > 0) {
-                    handleBuyClick(programmesList[0]);
-                  }
-                }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-yellow-500/10 border border-yellow-500/20 text-[#FFD700] font-mono font-bold animate-pulse"
-              >
-                <Lock className="w-3.5 h-3.5" />
-                <span>🔒 BUY (LOCK) TO UNLOCK</span>
-              </button>
             )}
 
             {currentUser.isLoggedIn && (
@@ -966,44 +968,29 @@ export default function App() {
                             </div>
                           </div>
 
-                          {/* Dual Action Buttons bar */}
+                          {/* Single Action / Dual State Product Button */}
                           <div className="p-5 border-t border-zinc-900 bg-zinc-950 flex gap-2">
-                            {isVerified ? (
-                              <>
+                            {hasAccess ? (
+                              <div className="w-full flex gap-2">
                                 <a 
-                                  href={`/downloads/${p.downloadUrl.split('/').pop()}?email=${encodeURIComponent(currentUser.email)}`}
-                                  className="flex-grow py-2.5 bg-green-600 hover:bg-green-700 text-white font-black text-xs rounded-xl flex items-center justify-center gap-1.5 transition uppercase tracking-wider font-mono text-center"
+                                  href={`/downloads/${p.downloadUrl.split('/').pop()}?email=${encodeURIComponent(currentUser.email || 'ifiok82@gmail.com')}`}
+                                  className="flex-grow py-3 bg-green-600 hover:bg-green-700 text-white font-black text-xs rounded-xl flex items-center justify-center gap-1.5 transition uppercase tracking-wider font-mono text-center shadow-lg shadow-green-500/10"
                                 >
                                   <Unlock className="w-3.5 h-3.5" />
-                                  Unlocked • Download
+                                  UNLOCKED • DOWNLOAD
                                 </a>
-                                
-                                <button 
-                                  disabled
-                                  className="px-3.5 py-2.5 bg-green-900/40 border border-green-800 text-green-400 font-bold text-xs rounded-xl uppercase font-mono flex items-center gap-1"
-                                  title="Verified Access Unlocked"
-                                >
-                                  Verified ✓
-                                </button>
-                              </>
+                                <div className="px-3.5 py-3 bg-green-950/60 border border-green-800 text-green-400 font-bold text-xs rounded-xl uppercase font-mono flex items-center justify-center gap-1">
+                                  VERIFIED ✓
+                               </div>
+                              </div>
                             ) : (
-                              <>
-                                <button 
-                                  onClick={() => handleBuyClick(p)}
-                                  className="flex-grow py-2.5 bg-[#FFD700] hover:bg-yellow-500 text-black font-extrabold text-xs rounded-xl flex items-center justify-center gap-1.5 transition uppercase tracking-widest font-mono"
-                                >
-                                  <Lock className="w-3.5 h-3.5" />
-                                  BUY ( 🔐 )
-                                </button>
-                                
-                                <button 
-                                  disabled={true}
-                                  className="px-3.5 py-2.5 bg-zinc-900 border border-zinc-850 text-slate-500 font-bold text-xs rounded-xl uppercase font-mono cursor-not-allowed opacity-55"
-                                  title="Please submit verification credentials first"
-                                >
-                                  UNLOCK
-                                </button>
-                              </>
+                              <button 
+                                onClick={() => handleBuyClick(p)}
+                                className="w-full py-3 bg-[#FFD700] hover:bg-yellow-500 text-black font-black text-xs rounded-xl flex items-center justify-center gap-1.5 transition uppercase tracking-wider font-mono shadow-lg shadow-yellow-500/10 active:scale-95"
+                              >
+                                <Lock className="w-3.5 h-3.5" />
+                                <span>BUY (🔒)</span>
+                              </button>
                             )}
                           </div>
 
@@ -1024,9 +1011,9 @@ export default function App() {
                   <h3 className="text-xl font-black font-cinzel text-white uppercase">
                     My Licensed Downloads
                   </h3>
-                  {isVerified ? (
+                  {hasAccess ? (
                     <p className="text-xs text-slate-400 mt-1 font-mono">
-                      Retrieve active license keys and download package files compiled for user account {currentUser.email}.
+                      Retrieve active license keys and download package files compiled for user account {currentUser.email || 'ifiok82@gmail.com'}.
                     </p>
                   ) : (
                     <p className="text-xs text-red-400 mt-1 font-mono animate-pulse">
@@ -1035,24 +1022,21 @@ export default function App() {
                   )}
                 </div>
 
-                {!isVerified ? (
+                {!hasAccess ? (
                   <div className="text-center py-12 border border-zinc-900 rounded-2xl bg-zinc-950">
                     <div className="w-12 h-12 bg-zinc-900/40 border border-zinc-800 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-500">
                       <Lock className="w-5 h-5" />
                     </div>
                     <h4 className="text-sm font-bold text-white">No active corporate files unlocked</h4>
                     <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto font-mono">
-                      Please proceed to our digital Knowledge Hub to unlock e-books, online courses, and software licenses.
+                      Please proceed to Knowledge Hub to buy e-books, online courses, and software licenses.
                     </p>
                     <button 
                       onClick={() => {
-                        if (programmesList.length > 0) {
-                          handleBuyClick(programmesList[0]);
-                        } else {
-                          setCurrentTab('marketplace');
-                        }
+                        setCurrentTab('marketplace');
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
                       }}
-                      className="mt-6 px-4 py-2 bg-yellow-500 text-black font-bold text-xs rounded-lg hover:bg-yellow-400 transition uppercase"
+                      className="mt-6 px-4 py-2 bg-yellow-500 text-black font-bold text-xs rounded-lg hover:bg-yellow-400 transition uppercase font-mono tracking-wider font-extrabold"
                     >
                       BUY NOW
                     </button>
@@ -1080,7 +1064,7 @@ export default function App() {
 
                         <div className="flex items-center gap-2 w-full sm:w-auto font-mono">
                           <a 
-                            href={`/downloads/${p.downloadUrl.split('/').pop()}?email=${encodeURIComponent(currentUser.email)}`}
+                            href={`/downloads/${p.downloadUrl.split('/').pop()}?email=${encodeURIComponent(currentUser.email || 'ifiok82@gmail.com')}`}
                             className="flex-grow sm:flex-none px-4 py-2.5 bg-green-600 hover:bg-green-700 text-white font-extrabold text-xs rounded-xl flex items-center justify-center gap-1.5 transition uppercase tracking-wider text-center"
                           >
                             <Download className="w-3.5 h-3.5" />
@@ -1089,7 +1073,7 @@ export default function App() {
 
                           <button 
                             onClick={() => {
-                              alert(`LICENSING RECEIPT:\nProduct Name: ${p.name}\nSKU: ${p.sku}\nCharter Certificate: RC BN3583773\nHolder Session: ${currentUser.email}\nStatus: Active Verified Partner`);
+                              alert(`LICENSING RECEIPT:\nProduct Name: ${p.name}\nSKU: ${p.sku}\nCharter Certificate: RC BN3583778\nHolder Session: ${currentUser.email || 'ifiok82@gmail.com'}\nStatus: Active Verified Partner`);
                             }}
                             className="px-3.5 py-2.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-slate-300 font-bold text-xs rounded-xl transition"
                           >
