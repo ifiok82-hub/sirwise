@@ -531,7 +531,7 @@ export default function App() {
     <div className="bg-[#0B132B] min-h-screen flex flex-col font-sans text-slate-200" onMouseMove={resetInactivityTimer} onClick={resetInactivityTimer} onKeyDown={resetInactivityTimer} onScroll={resetInactivityTimer}>
       
       {/* CORPORATE EXECUTIVE HEADER */}
-      <header className="bg-black border-b border-zinc-900 py-4 px-4 sticky top-0 z-50 flex items-center justify-center shadow-lg relative">
+      <header className="bg-[#0B132B] border-b border-[#FFD700]/20 py-4 px-4 sticky top-0 z-50 flex items-center justify-center shadow-xl relative">
         {/* Left: profile details if logged in */}
         {currentUser.isLoggedIn && (
           <button 
@@ -910,32 +910,32 @@ export default function App() {
               <div className="space-y-8 animate-fade-in">
                 
                 {/* Introduction Banner with design principles */}
-                <div className="bg-gradient-to-r from-zinc-950 via-[#0B132B] to-zinc-950 border border-zinc-850 rounded-2xl p-8 text-center relative overflow-hidden shadow-2xl">
-                  <div className="absolute inset-0 bg-[radial-gradient(ellipse_60%_50%_at_50%_0%,#ffd70005,#00000000)] pointer-events-none" />
+                <div className="bg-[#0B132B] border border-[#FFD700]/20 rounded-2xl p-8 text-center relative overflow-hidden shadow-2xl">
+                  <div className="absolute inset-0 bg-[radial-gradient(ellipse_60%_50%_at_50%_0%,#ffd70010,#00000000)] pointer-events-none" />
                   
                   <div className="relative max-w-2xl mx-auto space-y-4">
                     <span className="text-[10px] text-[#FFD700] tracking-widest font-mono font-bold block uppercase">
                       Executive Digital Knowledge Hub
                     </span>
-                    <h2 className="text-3xl sm:text-5xl font-black text-white font-cinzel leading-tight tracking-tight">
+                    <h2 className="text-3xl sm:text-5xl font-black text-white leading-tight tracking-tight">
                       SIRWISE GLOBAL DIGITAL HUB
                     </h2>
                     <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
-                      Discover online courses, premium handbooks, legal blueprints, cloud-based software tools, and professional strategy sessions licensed under corporate charter **RC BN3583778**.
+                      Discover online courses, premium handbooks, legal blueprints, cloud-based software tools, and professional strategy sessions licensed under corporate charter <strong>RC BN3583778</strong>.
                     </p>
                   </div>
                 </div>
 
-                {/* Clean interactive filters - structured in 2 rows */}
-                <div className="flex flex-wrap items-center justify-center gap-2 max-w-xl mx-auto p-1 bg-zinc-950/40 rounded-xl">
+                {/* Clean interactive filters */}
+                <div className="flex flex-wrap items-center justify-center gap-2 max-w-xl mx-auto p-1 bg-[#0B132B]/50 rounded-xl border border-zinc-800">
                   {(['all', 'courses', 'ebooks', 'templates', 'saas', 'assets', 'consulting'] as const).map((cat) => (
                     <button
                       key={cat}
                       onClick={() => setMarketCategory(cat)}
                       className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${
                         marketCategory === cat
-                          ? 'bg-[#F59E0B] text-black font-extrabold shadow-lg shadow-yellow-500/10'
-                          : 'text-slate-400 hover:text-white hover:bg-zinc-900/60'
+                          ? 'bg-[#FFD700] text-[#0B132B] font-extrabold shadow-lg shadow-[#FFD700]/20'
+                          : 'text-slate-400 hover:text-white hover:bg-zinc-800/60'
                       }`}
                     >
                       {cat === 'all' ? 'All Portals' : cat.toUpperCase()}
