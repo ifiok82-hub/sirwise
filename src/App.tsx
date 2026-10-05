@@ -52,7 +52,7 @@ interface UserProfile {
   phone: string;
   country: string;
   isLoggedIn: boolean;
-  role: 'student' | 'admin';
+  role: 'buyer' | 'admin';
 }
 
 // Audit Trail Logs from Backend
@@ -102,7 +102,7 @@ export default function App() {
       phone: '',
       country: '',
       isLoggedIn: false,
-      role: 'student'
+      role: 'buyer'
     };
   });
 
@@ -439,7 +439,7 @@ export default function App() {
           phone: data.user.phone,
           country: data.user.country,
           isLoggedIn: true,
-          role: 'student'
+          role: 'buyer'
         };
 
         setCurrentUser(verifiedUser);
@@ -486,7 +486,7 @@ export default function App() {
               <span className="text-[10px] text-[#FFD700] tracking-widest font-mono font-bold block">
                 KNOWLEDGE PORTAL
               </span>
-              <span className="text-[9px] text-slate-400 font-mono">RC BN3583773</span>
+              <span className="text-[9px] text-slate-400 font-mono">RC BN3583778</span>
             </div>
           </div>
 
@@ -507,7 +507,7 @@ export default function App() {
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-yellow-500/10 border border-yellow-500/20 text-[#FFD700] font-mono font-bold animate-pulse"
               >
                 <Lock className="w-3.5 h-3.5" />
-                <span>VERIFY PROFILE TO UNLOCK</span>
+                <span>🔒 BUY (LOCK) TO UNLOCK</span>
               </button>
             )}
 
@@ -882,7 +882,7 @@ export default function App() {
                       SIRWISE GLOBAL DIGITAL HUB
                     </h2>
                     <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
-                      Discover online courses, premium handbooks, legal blueprints, cloud-based software tools, and professional strategy sessions licensed under corporate charter **RC BN3583773**.
+                      Discover online courses, premium handbooks, legal blueprints, cloud-based software tools, and professional strategy sessions licensed under corporate charter **RC BN3583778**.
                     </p>
                   </div>
                 </div>
@@ -1030,7 +1030,7 @@ export default function App() {
                     </p>
                   ) : (
                     <p className="text-xs text-red-400 mt-1 font-mono animate-pulse">
-                      🔒 Downloads Portal is locked. Please verify your student profile to access packages.
+                      🔒 Downloads Portal is locked. Please BUY to unlock packages.
                     </p>
                   )}
                 </div>
@@ -1054,7 +1054,7 @@ export default function App() {
                       }}
                       className="mt-6 px-4 py-2 bg-yellow-500 text-black font-bold text-xs rounded-lg hover:bg-yellow-400 transition uppercase"
                     >
-                      Verify Now
+                      BUY NOW
                     </button>
                   </div>
                 ) : programmesList.length === 0 ? (
@@ -1224,7 +1224,7 @@ export default function App() {
               <div className="space-y-1.5">
                 <div className="flex items-center gap-2">
                   <SirwiseLogo className="h-8 w-auto" showText={false} />
-                  <h4 className="text-md font-black tracking-wider text-[#FFD700] font-cinzel">SECURE VERIFICATION PORTAL</h4>
+                  <h4 className="text-md font-black tracking-wider text-[#FFD700] font-cinzel">SECURE PAYMENT PORTAL</h4>
                 </div>
                 <p className="text-[11px] text-slate-300 font-mono italic">
                   “Global Digital Knowledge Hub powered by AI Professor.”
@@ -1461,12 +1461,12 @@ export default function App() {
                       {isSubmittingCheckout ? (
                         <>
                           <RefreshCw className="w-4 h-4 animate-spin" />
-                          Verifying Profile...
+                          Processing Order...
                         </>
                       ) : (
                         <>
                           <ShieldCheck className="w-4 h-4" />
-                          VERIFY & UNLOCK ACCESS
+                          BUY & UNLOCK ACCESS
                         </>
                       )}
                     </button>
@@ -1525,7 +1525,7 @@ export default function App() {
                     phone: '',
                     country: '',
                     isLoggedIn: false,
-                    role: 'student'
+                    role: 'buyer'
                   });
                   setIsVerified(false);
                   setIsProfileModalOpen(false);
@@ -1549,7 +1549,7 @@ export default function App() {
             </div>
             
             <p className="text-[11px] text-slate-400 leading-relaxed">
-              SIRWISE is an independent global digital knowledge, templates, and corporate consulting hub. Charter certificate registered under license number <strong>RC BN3583773</strong>.
+              SIRWISE is an independent global digital knowledge, templates, and corporate consulting hub. Charter certificate registered under license number <strong>RC BN3583778</strong>.
             </p>
           </div>
 
@@ -1616,7 +1616,7 @@ export default function App() {
         </div>
 
         <div className="max-w-7xl mx-auto mt-8 pt-6 border-t border-zinc-900 text-center text-[10px] text-slate-500 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <span>© 2026 SIRWISE Hub. Registered charter license RC BN3583773. All Rights Reserved.</span>
+          <span>© 2026 SIRWISE Hub. Registered charter license RC BN3583778. All Rights Reserved.</span>
           <span className="text-[9px] text-[#FFD700]">PCI DSS Verified • GDPR Secure Data Encryption Protocol</span>
         </div>
       </footer>

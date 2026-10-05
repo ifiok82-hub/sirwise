@@ -367,7 +367,7 @@ app.get('/api/config', (req: Request, res: Response) => {
   res.json({
     SYSTEM_MODE: 'VERIFICATION_ONLY',
     PLATFORM: 'SIRWISE Global Digital Hub',
-    CHARTER: 'RC BN3583773'
+    CHARTER: 'RC BN3583778'
   });
 });
 
