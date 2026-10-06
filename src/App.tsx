@@ -223,11 +223,42 @@ export default function App() {
     fetch('/api/products')
       .then(res => res.json())
       .then(data => {
-        setProgrammesList(data);
+        if (data && Array.isArray(data) && data.length > 0) {
+          setProgrammesList(data);
+        } else {
+          // Fallback if API returns empty
+          setProgrammesList([{
+            "id": "prod-mba-001",
+            "sku": "MBA-DIGITAL-2026",
+            "name": "MBA Digital Acceleration Program",
+            "category": "courses",
+            "description": "Executive masterclass on digital transformation.",
+            "longDescription": "Advanced strategies for digital leadership and AI adoption.",
+            "features": ["Digital Strategy", "AI Integration", "Financial Modeling"],
+            "image": "/assets/programmes/classroom_opt.jpg",
+            "altText": "Executive classroom",
+            "fileSize": "48.2 MB",
+            "downloadUrl": "/downloads/sirwise-mba-program-kit.zip"
+          }]);
+        }
         setIsLoadingProducts(false);
       })
       .catch(err => {
         console.error("Error loading products dynamically:", err);
+        // Fallback on error
+        setProgrammesList([{
+            "id": "prod-mba-001",
+            "sku": "MBA-DIGITAL-2026",
+            "name": "MBA Digital Acceleration Program",
+            "category": "courses",
+            "description": "Executive masterclass on digital transformation.",
+            "longDescription": "Advanced strategies for digital leadership and AI adoption.",
+            "features": ["Digital Strategy", "AI Integration", "Financial Modeling"],
+            "image": "/assets/programmes/classroom_opt.jpg",
+            "altText": "Executive classroom",
+            "fileSize": "48.2 MB",
+            "downloadUrl": "/downloads/sirwise-mba-program-kit.zip"
+        }]);
         setIsLoadingProducts(false);
       });
   }, []);
@@ -645,8 +676,7 @@ export default function App() {
       )}
 
       {/* PRIMARY WORKSPACE */}
-      <main className="flex-grow w-full mx-auto px-4 py-8 bg-red-900/50">
-        <h1 className="text-white text-3xl font-bold">DEBUG: Main Content Loaded</h1>
+      <main className="flex-grow w-full mx-auto px-4 py-8">
 
         {/* SECRET ADMINISTRATIVE INTERFACE PANEL */}
         {adminPanelOpen ? (

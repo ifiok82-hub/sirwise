@@ -97,15 +97,21 @@ function saveDatabase(db: DatabaseSchema) {
 }
 
 function getProducts() {
-  try {
-    if (fs.existsSync(PRODUCTS_FILE)) {
-      const raw = fs.readFileSync(PRODUCTS_FILE, 'utf-8');
-      return JSON.parse(raw);
+  return [
+    {
+      "id": "prod-mba-001",
+      "sku": "MBA-DIGITAL-2026",
+      "name": "MBA Digital Acceleration Program",
+      "category": "courses",
+      "description": "Executive masterclass on digital transformation.",
+      "longDescription": "Advanced strategies for digital leadership and AI adoption.",
+      "features": ["Digital Strategy", "AI Integration", "Financial Modeling"],
+      "image": "/assets/programmes/classroom_opt.jpg",
+      "altText": "Executive classroom",
+      "fileSize": "48.2 MB",
+      "downloadUrl": "/downloads/sirwise-mba-program-kit.zip"
     }
-  } catch (err) {
-    console.error('Failed loading products list:', err);
-  }
-  return [];
+  ];
 }
 
 // AI Professor chat proxy endpoint
