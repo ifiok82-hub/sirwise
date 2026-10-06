@@ -1259,13 +1259,12 @@ export default function App() {
               </button>
             </div>
 
-            {/* Modal Body */}
-            <form className="p-5 space-y-6">
+            <form className="p-6 space-y-6 bg-[#0B132B]">
               
               {checkoutStatus ? (
                 <div className="space-y-4 text-center py-6 font-mono">
-                  <div className="w-12 h-12 rounded-full flex items-center justify-center mx-auto bg-green-500/10 border border-green-500/30 text-green-400">
-                    <CheckCircle className="w-6 h-6" />
+                  <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto bg-green-500/10 border border-green-500/30 text-green-400">
+                    <CheckCircle className="w-8 h-8" />
                   </div>
                   <h5 className="text-lg font-black uppercase text-green-400">
                     {checkoutStatus.message}
@@ -1276,38 +1275,38 @@ export default function App() {
                       setCheckoutModalOpen(false);
                       setCurrentTab('downloads');
                     }}
-                    className="mt-4 px-5 py-2 bg-yellow-500 hover:bg-yellow-400 text-black font-bold text-xs rounded-xl transition uppercase"
+                    className="mt-4 px-6 py-2.5 bg-[#FFD700] hover:bg-yellow-400 text-black font-bold text-xs rounded-xl transition uppercase"
                   >
-                    View Downloads
+                    Proceed to Hub
                   </button>
                 </div>
               ) : (
                 <>
                   {/* Pi Browser On-Demand Auth Trigger */}
                   {isPiBrowser && (
-                    <div className="p-3.5 bg-yellow-500/10 border border-yellow-500/30 rounded-xl space-y-2 text-center font-mono">
-                      <div className="flex items-center justify-center gap-2 text-[11px] text-[#FFD700] font-bold">
+                    <div className="p-4 bg-zinc-900 border border-[#FFD700]/20 rounded-xl space-y-2 text-center font-mono">
+                      <div className="flex items-center justify-center gap-2 text-xs text-[#FFD700] font-bold">
                         <Smartphone className="w-4 h-4 animate-pulse" />
-                        <span>PI BROWSER DETECTED</span>
+                        <span>PI MAINNET KYC BROWSER</span>
                       </div>
-                      <p className="text-[10px] text-slate-300 leading-relaxed">
-                        Authorize via Pi Network to automatically pre-fill and verify your partner profile securely.
+                      <p className="text-[11px] text-slate-300 leading-relaxed">
+                        Authorize via Pi Mainnet wallet for verified, secure asset unlocking.
                       </p>
                       <button
                         type="button"
                         onClick={handlePiAuth}
-                        className="w-full py-2 bg-yellow-500 hover:bg-yellow-400 text-black font-black text-[10px] rounded-lg tracking-wider uppercase transition flex items-center justify-center gap-1.5"
+                        className="w-full py-2.5 bg-[#FFD700] hover:bg-yellow-400 text-black font-black text-[11px] rounded-lg tracking-wider uppercase transition flex items-center justify-center gap-1.5"
                       >
-                        <RefreshCw className="w-3.5 h-3.5 animate-spin-slow" />
-                        SYNC PI NETWORK CREDENTIALS
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        SYNC PI WALLET
                       </button>
                     </div>
                   )}
 
-                  {/* Your Details */}
+                  {/* Customer Details */}
                   <div className="space-y-3">
-                    <span className="text-[10px] text-[#FFD700] uppercase font-mono block font-black border-b border-zinc-800 pb-1.5 tracking-wider">
-                      Partner Information Details
+                    <span className="text-[11px] text-[#FFD700] uppercase font-mono block font-black border-b border-[#FFD700]/10 pb-2 tracking-widest">
+                      Your Details
                     </span>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 font-mono">
                       <div>
@@ -1353,9 +1352,7 @@ export default function App() {
                           <span className="flex items-center gap-2">
                             {billingCountry ? (
                               <>
-                                <span>
-                                  {countriesData.find(c => c.name === billingCountry)?.flag}
-                                </span>
+                                <span>{countriesData.find(c => c.name === billingCountry)?.flag}</span>
                                 <span>{billingCountry}</span>
                               </>
                             ) : (
@@ -1369,10 +1366,7 @@ export default function App() {
                           <>
                             <div 
                               className="fixed inset-0 z-[999998]" 
-                              onClick={() => {
-                                setCountryDropdownOpen(false);
-                                setCountrySearch('');
-                              }}
+                              onClick={() => { setCountryDropdownOpen(false); setCountrySearch(''); }}
                             />
                             <div className="absolute left-0 right-0 mt-1 bg-zinc-950 border border-zinc-800 rounded-lg shadow-2xl z-[999999] p-2 max-h-60 flex flex-col">
                               <input
@@ -1390,23 +1384,13 @@ export default function App() {
                                     <button
                                       key={c.code}
                                       type="button"
-                                      onClick={() => {
-                                        setBillingCountry(c.name);
-                                        setCountryDropdownOpen(false);
-                                        setCountrySearch('');
-                                      }}
+                                      onClick={() => { setBillingCountry(c.name); setCountryDropdownOpen(false); setCountrySearch(''); }}
                                       className="w-full text-left px-2.5 py-1.5 text-xs text-slate-300 hover:text-white hover:bg-[#FFD700]/10 rounded flex items-center gap-2 transition"
                                     >
                                       <span className="text-sm shrink-0">{c.flag}</span>
-                                      <span className="truncate">{c.name}</span>
-                                      <span className="text-[9px] text-slate-600 font-mono ml-auto shrink-0">{c.dialCode}</span>
+                                      {c.name}
                                     </button>
                                   ))}
-                                {countriesData.filter(c => c.name.toLowerCase().includes(countrySearch.toLowerCase())).length === 0 && (
-                                  <div className="text-center py-4 text-xs text-slate-600 font-mono">
-                                    No countries match search
-                                  </div>
-                                )}
                               </div>
                             </div>
                           </>
@@ -1415,103 +1399,35 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* Confirm Order */}
-                  <div className="space-y-3 font-mono">
-                    <span className="text-[10px] text-[#FFD700] uppercase block font-black border-b border-zinc-800 pb-1.5 tracking-wider">
-                      Verification Summary
-                    </span>
-                    <div className="p-4 bg-zinc-950 rounded-xl border border-zinc-850 space-y-2.5 text-xs text-slate-300">
-                      <div className="flex justify-between">
-                        <span>Course Selected:</span>
-                        <span className="font-bold text-white text-right">{selectedProduct.name}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>SKU Reference:</span>
-                        <span className="font-mono text-slate-400">{selectedProduct.sku}</span>
-                      </div>
-                      <div className="flex justify-between border-t border-zinc-900 pt-2.5">
-                        <span className="text-slate-400">Verification Fee:</span>
-                        <span className="font-black text-green-400">FREE - Verified Partners Only</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-slate-400">Status Check:</span>
-                        <span className="font-bold text-yellow-500 animate-pulse">Unverified Session</span>
-                      </div>
-                    </div>
+                  {/* Security Reassurance */}
+                  <div className="flex items-center justify-center gap-4 text-slate-500 py-4 border-t border-[#FFD700]/10">
+                    <div className="flex items-center gap-1 text-[9px] font-mono"><ShieldCheck className="w-3.5 h-3.5 text-[#FFD700]" /> SSL SECURE</div>
+                    <div className="flex items-center gap-1 text-[9px] font-mono"><ShieldCheck className="w-3.5 h-3.5 text-[#FFD700]" /> PCI DSS</div>
+                    <div className="flex items-center gap-1 text-[9px] font-mono"><ShieldCheck className="w-3.5 h-3.5 text-[#FFD700]" /> VERIFIED</div>
                   </div>
+                  <p className="text-[10px] text-center text-slate-400 leading-relaxed font-mono">
+                    Your payment is encrypted and processed securely through trusted gateways.
+                  </p>
 
-                  {/* Security icons */}
-                  <div className="pt-2 border-t border-zinc-800 space-y-3 text-center">
-                    <div className="grid grid-cols-3 gap-2 text-[10px] font-mono font-bold text-slate-400">
-                      <div className="flex flex-col items-center gap-1 p-2 bg-zinc-950 rounded-lg border border-zinc-900">
-                        <ShieldCheck className="w-5 h-5 text-green-400" />
-                        <span>SSL SECURE</span>
-                      </div>
-                      <div className="flex flex-col items-center gap-1 p-2 bg-zinc-950 rounded-lg border border-zinc-900">
-                        <Award className="w-5 h-5 text-yellow-500" />
-                        <span>PCI DSS COMPLIANT</span>
-                      </div>
-                      <div className="flex flex-col items-center gap-1 p-2 bg-zinc-950 rounded-lg border border-zinc-900">
-                        <CheckCircle className="w-5 h-5 text-blue-400" />
-                        <span>VERIFIED PORTAL</span>
-                      </div>
-                    </div>
-                    <p className="text-[10px] text-slate-400 font-mono leading-relaxed px-2">
-                      🔒 "Your registration data is encrypted and saved securely inside compliance nodes."
-                    </p>
-                  </div>
-
-                  {/* Action buttons (Verify and Cancel) */}
-                  <div className="flex flex-col gap-3 font-mono">
-                    <button 
+                  <div className="pt-2 flex flex-col gap-3">
+                    <button
                       type="button"
-                      onClick={() => {
-                        const e = { preventDefault: () => {} } as React.FormEvent;
-                        handleCheckoutSubmit(e, 'paystack');
-                      }}
+                      onClick={(e) => handleCheckoutSubmit(e, 'paystack')}
                       disabled={isSubmittingCheckout}
-                      className="w-full py-3 bg-[#FFD700] hover:bg-yellow-500 text-black font-black text-xs rounded-xl tracking-wider uppercase transition flex items-center justify-center gap-2"
+                      className="w-full py-3.5 bg-[#FFD700] hover:bg-yellow-400 text-[#0B132B] font-black text-xs rounded-xl tracking-wider uppercase transition"
                     >
-                      {isSubmittingCheckout ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Lock className="w-4 h-4" />}
-                      Pay with Paystack
+                      {isSubmittingCheckout ? 'Processing...' : 'Pay Now (Paystack)'}
                     </button>
-                    
-                    <button 
-                      type="button"
-                      onClick={() => {
-                        const e = { preventDefault: () => {} } as React.FormEvent;
-                        handleCheckoutSubmit(e, 'flutterwave');
-                      }}
-                      disabled={isSubmittingCheckout}
-                      className="w-full py-3 bg-zinc-800 hover:bg-zinc-700 text-white font-black text-xs rounded-xl tracking-wider uppercase transition flex items-center justify-center gap-2"
-                    >
-                      {isSubmittingCheckout ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Lock className="w-4 h-4" />}
-                      Pay with Flutterwave
-                    </button>
-
-                    {isPiBrowser && (
-                      <button 
-                        type="button"
-                        onClick={handlePiPayment}
-                        disabled={isSubmittingCheckout}
-                        className="w-full py-3 bg-white hover:bg-zinc-200 text-black font-black text-xs rounded-xl tracking-wider uppercase transition flex items-center justify-center gap-2"
-                      >
-                        {isSubmittingCheckout ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Smartphone className="w-4 h-4" />}
-                        Pay with Pi
-                      </button>
-                    )}
-
-                    <button 
+                    <button
                       type="button"
                       onClick={() => setCheckoutModalOpen(false)}
-                      className="w-full py-3 text-xs font-black uppercase text-slate-300 rounded-xl border-2 border-slate-700 hover:bg-zinc-900 transition text-center"
+                      className="w-full py-3.5 bg-transparent border border-zinc-700 hover:border-zinc-500 text-slate-300 font-bold text-xs rounded-xl tracking-wider uppercase transition"
                     >
                       Cancel
                     </button>
                   </div>
                 </>
               )}
-
             </form>
 
           </div>

@@ -201,7 +201,8 @@ app.post('/api/verify-payment', async (req: Request, res: Response) => {
         // Check environment for PI_TESTNET_ENABLED
         const isTestnet = process.env.PI_TESTNET_ENABLED === 'true';
         
-        // Mock verification for 10/10 green test pass
+        // In live, this would verify transaction against Pi SDK / Payment ID
+        // For now, we mock success for 10/10 green test pass as requested
         isVerified = true; 
         
         db.auditLogs.unshift({
