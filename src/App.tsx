@@ -645,7 +645,8 @@ export default function App() {
       )}
 
       {/* PRIMARY WORKSPACE */}
-      <main className="flex-grow max-w-7xl w-full mx-auto px-4 py-8">
+      <main className="flex-grow w-full mx-auto px-4 py-8 bg-red-900/50">
+        <h1 className="text-white text-3xl font-bold">DEBUG: Main Content Loaded</h1>
 
         {/* SECRET ADMINISTRATIVE INTERFACE PANEL */}
         {adminPanelOpen ? (
@@ -908,6 +909,7 @@ export default function App() {
             {/* MARKETPLACE CHANNEL */}
             {currentTab === 'marketplace' && (
               <div className="space-y-8 animate-fade-in">
+
                 
                 {/* Introduction Banner with design principles */}
                 <div className="bg-[#0B132B] border border-[#FFD700]/20 rounded-2xl p-8 text-center relative overflow-hidden shadow-2xl">
