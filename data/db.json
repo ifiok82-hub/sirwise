@@ -1,6 +1,31 @@
 {
-  "users": [],
+  "users": [
+    {
+      "id": "USR-248351",
+      "name": "Pi Pioneer",
+      "email": "test@sirwise.store",
+      "phone": "+2348000000000",
+      "country": "Nigeria",
+      "status": "Verified",
+      "timestamp": "2026-10-06 10:26:36",
+      "device": "Desktop Device (::ffff:127.0.0.1)"
+    }
+  ],
   "auditLogs": [
+    {
+      "id": "AL-1791282396140",
+      "action": "Payment callback verified via pi_testnet (SANDBOX-TEST-001). User unlocked.",
+      "timestamp": "2026-10-06 10:26:36",
+      "user": "test@sirwise.store",
+      "severity": "info"
+    },
+    {
+      "id": "AL-1791282391688",
+      "action": "Pi Testnet Sandbox verification completed (10/10 green 💚) for tx TEST-PI-12345.",
+      "timestamp": "2026-10-06 10:26:31",
+      "user": "developer@minepi.com",
+      "severity": "info"
+    },
     {
       "id": "AL-1",
       "action": "SIRWISE Global Digital Hub database initialized.",

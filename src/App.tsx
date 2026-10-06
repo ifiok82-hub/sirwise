@@ -384,58 +384,64 @@ export default function App() {
     }
   };
 
-  // Pi Mainnet / Testnet Payment execution routed through Sandbox environment
-  const handlePiPayment = async (isTestnet = true) => {
+  // Pi Mainnet / Testnet Payment execution
+  const handlePiPayment = async (isTestnet = false) => {
     if (!selectedProduct) return;
+    
+    // If running in developer sandbox mode:
+    if (isTestnet) {
+      setIsSubmittingCheckout(true);
+      await verifyPayment({
+        reference: `PI-SANDBOX-${Date.now()}`,
+        provider: 'pi_testnet',
+        name: billingName || 'Pi Testnet Developer',
+        email: billingEmail || 'developer@minepi.com',
+        phone: billingPhone || '+2340000000',
+        country: billingCountry || 'Global'
+      });
+      return;
+    }
+
+    // Live Pi Mainnet execution inside Pi Browser
     try {
-      if (typeof window !== 'undefined' && (window as any).Pi) {
+      if (typeof window !== 'undefined' && (window as any).Pi && (window as any).Pi.createPayment) {
         const Pi = (window as any).Pi;
         await Pi.createPayment({
-          amount: 10,
-          memo: `Payment for ${selectedProduct.name} on SIRWISE (Pi Testnet Sandbox)`,
+          amount: selectedProduct.pricePI || 10,
+          memo: `Payment for ${selectedProduct.name} on SIRWISE (Pi Mainnet)`,
           metadata: { 
             productId: selectedProduct.id, 
-            isTestnet: true,
-            sandbox: true,
+            isTestnet: false,
             appletId: "b4e2e629-1b9d-44d2-9e47-2e2b931c8f3f"
           },
         }, {
           onReadyForServerApproval: (paymentId: string) => {
-            console.log("Pi Testnet payment approval requested for ID:", paymentId);
             verifyPayment({ 
               reference: paymentId, 
-              provider: 'pi', 
-              name: billingName || 'Pi Testnet Pioneer', 
+              provider: 'pi_mainnet', 
+              name: billingName || 'Pi Pioneer', 
               email: billingEmail || 'pioneer@minepi.com', 
               phone: billingPhone || '+2340000000', 
               country: billingCountry || 'Global' 
             });
           },
           onReadyForServerCompletion: (paymentId: string, txid: string) => {
-            console.log("Pi Testnet Sandbox payment completed:", paymentId, txid);
+            console.log("Pi Mainnet payment completed:", paymentId, txid);
           },
           onCancel: (paymentId: string) => {
-            console.log("Pi Testnet Sandbox payment cancelled:", paymentId);
+            console.log("Pi payment cancelled by user:", paymentId);
           },
           onError: (error: any) => { 
-            console.error("Pi Testnet payment error:", error); 
-            alert("Pi Testnet Sandbox Payment encountered an error or was cancelled."); 
+            console.error("Pi payment error:", error);
+            alert("Pi Mainnet transaction was cancelled or encountered a network error. You can also test using the Developer Sandbox below.");
           },
         });
       } else {
-        // Direct sandbox flow verification for web testing
-        verifyPayment({
-          reference: `PI-SANDBOX-${Date.now()}`,
-          provider: 'pi',
-          name: billingName || 'Pi Testnet Developer',
-          email: billingEmail || 'developer@minepi.com',
-          phone: billingPhone || '+2340000000',
-          country: billingCountry || 'Global'
-        });
+        alert("Pi Mainnet payments require opening the app inside the Pi Browser (https://minepi.com). In standard browsers, please select Paystack, Flutterwave, PayPal, or use the Developer Testing Sandbox below.");
       }
-    } catch (err) {
-      console.error("Pi Payment init failure:", err);
-      alert("Pi Payment could not be initiated.");
+    } catch (err: any) {
+      console.error("Pi Payment error:", err);
+      alert("Pi Mainnet payments require Pi Browser. To test in standard browser, select Developer Testing Sandbox below.");
     }
   };
 
@@ -566,7 +572,7 @@ export default function App() {
     }
   };
 
-  // Launch Checkout Modal
+  // Launch Checkout Modal with automatic browser environment detection
   const handleBuyClick = (product: DigitalProduct) => {
     setSelectedProduct(product);
     setCheckoutModalOpen(true);
@@ -575,6 +581,12 @@ export default function App() {
     setBillingEmail(currentUser.email || '');
     setBillingPhone(currentUser.phone || '');
     setBillingCountry(currentUser.country || 'Nigeria');
+    // Automatically select gateway based on browser environment
+    if (isPiBrowser) {
+      setSelectedGateway('pi_mainnet');
+    } else {
+      setSelectedGateway('paystack');
+    }
   };
 
   // Perform Payment
@@ -622,8 +634,11 @@ export default function App() {
       setTimeout(() => {
         verifyPayment({ reference: `PAYPAL-${Date.now()}`, provider: 'paypal', name: billingName, email: billingEmail, phone: billingPhone, country: billingCountry });
       }, 1000);
-    } else if (selectedGateway === 'pi_mainnet' || selectedGateway === 'pi_testnet') {
-      // Routes through Pi Testnet Sandbox
+    } else if (selectedGateway === 'pi_mainnet') {
+      // Live Pi Mainnet execution
+      handlePiPayment(false);
+    } else if (selectedGateway === 'pi_testnet') {
+      // Developer Testing Sandbox (10/10)
       handlePiPayment(true);
     }
   };
@@ -1581,35 +1596,132 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* Step 2: Payment Method */}
+                  {/* Step 2: Payment Method (Separated by Browser Environment) */}
                   <div className="space-y-3 font-mono">
-                    <span className="text-[11px] text-[#FFD700] uppercase block font-black border-b border-[#FFD700]/20 pb-1.5 tracking-wider">
-                      Step 2: Payment Method
-                    </span>
-
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                      {[
-                        { id: 'paystack', label: 'Paystack', desc: 'Cards & Transfer' },
-                        { id: 'flutterwave', label: 'Flutterwave', desc: 'Global & USSD' },
-                        { id: 'paypal', label: 'PayPal', desc: 'International' },
-                        { id: 'pi_mainnet', label: 'Pi Mainnet', desc: 'KYC Wallet' },
-                        { id: 'pi_testnet', label: 'Pi Testnet', desc: 'Sandbox 10/10' }
-                      ].map(gateway => (
+                    <div className="flex items-center justify-between border-b border-[#FFD700]/20 pb-1.5">
+                      <span className="text-[11px] text-[#FFD700] uppercase font-black tracking-wider">
+                        Step 2: Payment Method
+                      </span>
+                      {/* Environment Mode Switcher for Developer / Pioneer Testing */}
+                      <div className="flex items-center gap-1.5 text-[9px]">
+                        <span className="text-slate-400">Environment:</span>
                         <button
-                          key={gateway.id}
                           type="button"
-                          onClick={() => setSelectedGateway(gateway.id as any)}
-                          className={`p-2.5 rounded-xl border text-left transition ${
-                            selectedGateway === gateway.id
-                              ? 'bg-[#FFD700]/15 border-[#FFD700] text-white shadow-md'
-                              : 'bg-black border-zinc-850 text-slate-400 hover:border-zinc-700'
-                          }`}
+                          onClick={() => {
+                            const next = !isPiBrowser;
+                            setIsPiBrowser(next);
+                            setSelectedGateway(next ? 'pi_mainnet' : 'paystack');
+                          }}
+                          className="px-2 py-0.5 rounded bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-[#FFD700] font-bold"
+                          title="Click to toggle browser environment mode"
                         >
-                          <div className="font-bold text-xs text-white">{gateway.label}</div>
-                          <div className="text-[9px] text-slate-400">{gateway.desc}</div>
+                          {isPiBrowser ? '📱 Pi Browser' : '🌐 Standard Browser'} (Toggle)
                         </button>
-                      ))}
+                      </div>
                     </div>
+
+                    {/* Live Payment Adapters based on Browser Environment */}
+                    {!isPiBrowser ? (
+                      /* Standard Browser Adapters (Live Gateways Only) */
+                      <div className="space-y-2">
+                        <span className="text-[10px] text-slate-400 block">
+                          Select Live Payment Gateway:
+                        </span>
+                        <div className="grid grid-cols-3 gap-2">
+                          {[
+                            { id: 'paystack', label: 'Paystack', desc: 'Cards & Transfer' },
+                            { id: 'flutterwave', label: 'Flutterwave', desc: 'Global & USSD' },
+                            { id: 'paypal', label: 'PayPal', desc: 'International' },
+                          ].map(gateway => (
+                            <button
+                              key={gateway.id}
+                              type="button"
+                              onClick={() => setSelectedGateway(gateway.id as any)}
+                              className={`p-2.5 rounded-xl border text-left transition ${
+                                selectedGateway === gateway.id
+                                  ? 'bg-[#FFD700]/15 border-[#FFD700] text-white shadow-md'
+                                  : 'bg-black border-zinc-850 text-slate-400 hover:border-zinc-700'
+                              }`}
+                            >
+                              <div className="font-bold text-xs text-white">{gateway.label}</div>
+                              <div className="text-[9px] text-slate-400">{gateway.desc}</div>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      /* Pi Browser Adapters (Pi Mainnet KYC Only) */
+                      <div className="space-y-2.5">
+                        <span className="text-[10px] text-purple-300 block">
+                          Pi Ecosystem Live Gateway:
+                        </span>
+                        <div className="p-3 rounded-xl border border-[#FFD700] bg-[#FFD700]/10 flex items-center justify-between">
+                          <div>
+                            <div className="font-bold text-xs text-white flex items-center gap-1.5">
+                              <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+                              Pi Mainnet (KYC Wallet)
+                            </div>
+                            <div className="text-[10px] text-slate-300 mt-0.5">
+                              Verified Mainnet Pioneer Settlement • Live KYC Enforced
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={handlePiAuth}
+                            className="px-2.5 py-1 bg-[#FFD700] hover:bg-yellow-400 text-black text-[10px] font-black rounded-lg uppercase"
+                          >
+                            Sync Pi Auth
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* SEPARATED PI TESTNET SANDBOX (Developer Testing Only - Not for Live Transactions) */}
+                    <div className="pt-3 border-t border-purple-500/25 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] text-purple-400 font-bold uppercase tracking-wider flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse" />
+                          Developer Testing Only – Not for Live Transactions
+                        </span>
+                        <span className="px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 text-[9px] font-mono border border-purple-500/30">
+                          Sandbox 10/10
+                        </span>
+                      </div>
+                      
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedGateway('pi_testnet');
+                            handlePiPayment(true);
+                          }}
+                          className="flex-1 p-2.5 rounded-xl border border-purple-500/40 bg-purple-950/40 hover:bg-purple-900/60 text-purple-200 flex items-center justify-between font-mono text-xs transition"
+                        >
+                          <div className="flex items-center gap-2">
+                            <CheckCircle className="w-4 h-4 text-purple-400" />
+                            <span className="font-bold">Pi Testnet (Sandbox 10/10)</span>
+                          </div>
+                          <span className="text-[10px] text-green-400 font-bold bg-green-500/10 px-2 py-0.5 rounded border border-green-500/30">
+                            Test & Unlock
+                          </span>
+                        </button>
+                        
+                        <a
+                          href="https://sandbox.minepi.com/app/sirwise-bmyz"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-3 py-2.5 rounded-xl border border-purple-500/30 bg-black/60 hover:bg-purple-950/30 text-purple-300 flex items-center justify-center gap-1 text-[10px] font-bold transition"
+                        >
+                          <span>Sandbox URL</span>
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                      </div>
+
+                      <p className="text-[9px] text-slate-400 leading-tight">
+                        Executes test verification callback against <code className="text-purple-300">/api/payment/verify</code>, returns <strong className="text-green-400">SUCCESS</strong>, and unlocks digital assets automatically.
+                      </p>
+                    </div>
+
                   </div>
 
                   {/* Security Icons & Reassurance */}

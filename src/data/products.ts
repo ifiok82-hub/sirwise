@@ -3,6 +3,8 @@ export interface DigitalProduct {
   sku: string;
   name: string;
   category: 'courses' | 'ebooks' | 'templates' | 'saas' | 'assets' | 'consulting';
+  priceUSD: number;
+  pricePI: number;
   description: string;
   longDescription: string;
   features: string[];
@@ -18,6 +20,8 @@ export const OFFICIAL_PRODUCTS: DigitalProduct[] = [
     sku: "SKU-SIR-MBA-ACC",
     name: "MBA Digital Acceleration Program",
     category: "courses",
+    priceUSD: 99.00,
+    pricePI: 10.00,
     description: "Accelerate your executive credentials with advanced corporate management modules, leadership strategies, and digital scaling blueprints.",
     longDescription: "Our premier Digital MBA masterclass designed specifically for founders, executives, and high-growth team leaders. Master core business execution frameworks, administrative operations, scaling strategies, and corporate governance.",
     features: [
@@ -36,6 +40,8 @@ export const OFFICIAL_PRODUCTS: DigitalProduct[] = [
     sku: "SKU-SIR-SOV-WEALTH",
     name: "Sovereign Wealth Guide",
     category: "ebooks",
+    priceUSD: 49.00,
+    pricePI: 5.00,
     description: "The ultimate blueprint to understanding global capital flows, asset protection, and wealth accumulation guides.",
     longDescription: "A premium corporate asset management playbook covering macro-economic capital flow dynamics, international corporate structures, asset security, tax mitigation, and wealth diversification strategies.",
     features: [
@@ -54,6 +60,8 @@ export const OFFICIAL_PRODUCTS: DigitalProduct[] = [
     sku: "SKU-SIR-PITCH-DECK",
     name: "Venture Pitch Deck Master Template",
     category: "templates",
+    priceUSD: 59.00,
+    pricePI: 6.00,
     description: "Raise capital instantly with our structured pitch framework utilized by global start-ups to raise millions.",
     longDescription: "Save hundreds of hours designing your investor presentation slides. Formatted specifically to tell an impactful commercial narrative that grabs venture capitalists, angel networks, and banks.",
     features: [
@@ -72,6 +80,8 @@ export const OFFICIAL_PRODUCTS: DigitalProduct[] = [
     sku: "SKU-SIR-LEDGER-ACC",
     name: "LedgerWise Cloud Accounting Software",
     category: "saas",
+    priceUSD: 79.00,
+    pricePI: 8.00,
     description: "Streamline your bookkeeping, balance sheets, and invoicing with our customized, offline-first cloud accountant.",
     longDescription: "A robust cloud-based billing and cash flow bookkeeping tool optimized for small businesses, contractors, and agencies. Automatically compile financial ledgers, draft balance sheets, track expenses, and issue client invoices.",
     features: [
@@ -90,6 +100,8 @@ export const OFFICIAL_PRODUCTS: DigitalProduct[] = [
     sku: "SKU-SIR-MEDIA-VAULT",
     name: "Creative Media Asset Vault",
     category: "assets",
+    priceUSD: 69.00,
+    pricePI: 7.00,
     description: "Unbox over 10,000 royalty-free high-definition graphics, studio-recorded audio background packs, and UI templates.",
     longDescription: "Elevate your creative production value. This massive collection gives developers, designers, and marketers royalty-free assets to launch high-fidelity websites, landing pages, social media campaigns, and videos.",
     features: [
@@ -108,6 +120,8 @@ export const OFFICIAL_PRODUCTS: DigitalProduct[] = [
     sku: "SKU-SIR-CONSULT-MENT",
     name: "Elite Consulting & Mentorship Session",
     category: "consulting",
+    priceUSD: 199.00,
+    pricePI: 20.00,
     description: "Secure a direct 1-on-1 virtual conference with certified senior digital business specialists and tax attorneys.",
     longDescription: "Fast-track your corporate setup, immigration steps, or system development hurdles. Book a private, screen-sharing strategy meeting to audit your operational models and design a roadmap.",
     features: [
@@ -126,6 +140,8 @@ export const OFFICIAL_PRODUCTS: DigitalProduct[] = [
     sku: "SKU-SIR-VAL-CALC",
     name: "Professional Valuation Calculators Package",
     category: "templates",
+    priceUSD: 49.00,
+    pricePI: 5.00,
     description: "Instantly calculate enterprise valuations, DCF models, internal rate of returns, and liquidity scenarios.",
     longDescription: "Equip your finance team with elite corporate valuation models. Includes Discounted Cash Flow (DCF), Net Present Value (NPV), Weighted Average Cost of Capital (WACC), and merger analysis spreadsheets.",
     features: [
@@ -144,6 +160,8 @@ export const OFFICIAL_PRODUCTS: DigitalProduct[] = [
     sku: "SKU-SIR-AI-PROF",
     name: "AI Professor Masterclass & Toolkit",
     category: "saas",
+    priceUSD: 89.00,
+    pricePI: 9.00,
     description: "Master large language modeling, API integrations, and automate client pipelines in this extensive toolkit.",
     longDescription: "The ultimate AI training blueprint. Build custom system instructions context parameters, program local node interfaces, fine-tune models, and deploy automated agent loops in your business.",
     features: [
