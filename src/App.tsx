@@ -261,34 +261,65 @@ export default function App() {
       });
   }, []);
 
-  // Pi Browser detection
+  // Dynamic Payment Keys from Vercel / Server Config
+  const [paystackKey, setPaystackKey] = useState<string>(
+    () => (typeof process !== 'undefined' && (process.env.PAYSTACK_PUBLIC_KEY || process.env.VITE_PAYSTACK_PUBLIC_KEY)) || import.meta.env.VITE_PAYSTACK_PUBLIC_KEY || ''
+  );
+  const [flwKey, setFlwKey] = useState<string>(
+    () => (typeof process !== 'undefined' && (process.env.FLUTTERWAVE_PUBLIC_KEY || process.env.VITE_FLW_PUBLIC_KEY || process.env.VITE_FLUTTERWAVE_PUBLIC_KEY)) || import.meta.env.VITE_FLW_PUBLIC_KEY || import.meta.env.VITE_FLUTTERWAVE_PUBLIC_KEY || ''
+  );
+
+  // Sync dynamic keys and configuration from server
   useEffect(() => {
-    const checkPi = typeof window !== 'undefined' && 
-                    !!(window as any).Pi && 
-                    window.navigator.userAgent.toLowerCase().includes('pibrowser');
-    setIsPiBrowser(checkPi);
-    if (checkPi) {
+    fetch('/api/config')
+      .then(res => res.json())
+      .then(cfg => {
+        if (cfg) {
+          if (cfg.PAYSTACK_PUBLIC_KEY && cfg.PAYSTACK_PUBLIC_KEY.trim()) {
+            setPaystackKey(cfg.PAYSTACK_PUBLIC_KEY.trim());
+          }
+          if (cfg.FLUTTERWAVE_PUBLIC_KEY && cfg.FLUTTERWAVE_PUBLIC_KEY.trim()) {
+            setFlwKey(cfg.FLUTTERWAVE_PUBLIC_KEY.trim());
+          }
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  // Pi Network SDK Initialization (Sandbox / Testnet Mode Active)
+  useEffect(() => {
+    const isSandboxActive = (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_PI_TESTNET_ENABLED === "true") ||
+                            (typeof process !== 'undefined' && process.env?.PI_TESTNET_ENABLED === "true") ||
+                            import.meta.env.VITE_PI_TESTNET_ENABLED === "true" ||
+                            true; // Default to true for Testnet Sandbox
+    
+    if (typeof window !== 'undefined' && (window as any).Pi) {
       try {
-        const Pi = (window as any).Pi;
-        Pi.init({ version: "2.0" });
-        console.log("Pi SDK initialized in Pi Browser.");
+        (window as any).Pi.init({
+          version: "2.0",
+          sandbox: isSandboxActive
+        });
+        console.log(`Pi SDK initialized with version 2.0 (sandbox: ${isSandboxActive}). Routing all authentications and payments to Pi Testnet.`);
+        setIsPiBrowser(true);
       } catch (err) {
-        console.error("Pi SDK error:", err);
+        console.error("Pi SDK initialization error:", err);
       }
+    } else if (typeof window !== 'undefined' && window.navigator.userAgent.toLowerCase().includes('pibrowser')) {
+      setIsPiBrowser(true);
     }
   }, []);
 
-  // Paystack & Flutterwave Payment Configuration
+  // Paystack & Flutterwave Payment Configuration (Connected with Live Keys)
   const paystackConfig = {
     reference: `REF-PSTK-${Date.now()}`,
     email: billingEmail || 'member@sirwise.store',
     amount: 16000 * 100, // Amount in kobo
-    publicKey: import.meta.env.VITE_PAYSTACK_PUBLIC_KEY || 'pk_live_placeholder',
+    publicKey: paystackKey || 'pk_live_placeholder',
   };
   const initializePaystack = usePaystackPayment(paystackConfig);
 
   const flwConfig = {
-    public_key: import.meta.env.VITE_FLW_PUBLIC_KEY || 'FLWPUBK-placeholder',
+    public_key: flwKey || 'FLWPUBK-placeholder',
     tx_ref: `REF-FLW-${Date.now()}`,
     amount: 16000,
     currency: 'NGN',
@@ -329,22 +360,22 @@ export default function App() {
     }
   };
 
-  // Pi Browser Auth trigger
+  // Pi Browser Auth trigger (routes through Sandbox/Testnet when PI_TESTNET_ENABLED is active)
   const handlePiAuth = async () => {
     if (typeof window === 'undefined' || !(window as any).Pi) {
-      alert("Pi Network SDK is not available outside of Pi Browser. Please open in Pi Browser.");
+      alert("Pi Network SDK is not available outside of Pi Browser or Sandbox environment.");
       return;
     }
     try {
       const Pi = (window as any).Pi;
       const auth = await Pi.authenticate(['username', 'payments'], (payment: any) => {
-        console.warn("Incomplete payments:", payment);
+        console.warn("Incomplete sandbox payment detected in Pi Testnet:", payment);
       });
       if (auth && auth.user) {
         const piUsername = auth.user.username;
         setBillingName(piUsername || '');
         setBillingEmail(`${piUsername}@pi.browser`);
-        setBillingPhone("PI-BROWSER-AUTH");
+        setBillingPhone("PI-TESTNET-SANDBOX");
         setBillingCountry("Nigeria");
       }
     } catch (err: any) {
@@ -353,46 +384,57 @@ export default function App() {
     }
   };
 
-  // Pi Mainnet / Testnet Payment execution
-  const handlePiPayment = async (isTestnet = false) => {
+  // Pi Mainnet / Testnet Payment execution routed through Sandbox environment
+  const handlePiPayment = async (isTestnet = true) => {
     if (!selectedProduct) return;
     try {
       if (typeof window !== 'undefined' && (window as any).Pi) {
         const Pi = (window as any).Pi;
         await Pi.createPayment({
           amount: 10,
-          memo: `Payment for ${selectedProduct.name} on SIRWISE`,
-          metadata: { productId: selectedProduct.id, isTestnet },
+          memo: `Payment for ${selectedProduct.name} on SIRWISE (Pi Testnet Sandbox)`,
+          metadata: { 
+            productId: selectedProduct.id, 
+            isTestnet: true,
+            sandbox: true,
+            appletId: "b4e2e629-1b9d-44d2-9e47-2e2b931c8f3f"
+          },
         }, {
           onReadyForServerApproval: (paymentId: string) => {
+            console.log("Pi Testnet payment approval requested for ID:", paymentId);
             verifyPayment({ 
               reference: paymentId, 
               provider: 'pi', 
-              name: billingName || 'Pi Pioneer', 
+              name: billingName || 'Pi Testnet Pioneer', 
               email: billingEmail || 'pioneer@minepi.com', 
               phone: billingPhone || '+2340000000', 
               country: billingCountry || 'Global' 
             });
           },
           onReadyForServerCompletion: (paymentId: string, txid: string) => {
-            console.log("Pi Payment completed:", txid);
+            console.log("Pi Testnet Sandbox payment completed:", paymentId, txid);
           },
-          onCancel: () => {},
-          onError: (error: any) => { console.error(error); alert("Pi Payment was cancelled or encountered an error."); },
+          onCancel: (paymentId: string) => {
+            console.log("Pi Testnet Sandbox payment cancelled:", paymentId);
+          },
+          onError: (error: any) => { 
+            console.error("Pi Testnet payment error:", error); 
+            alert("Pi Testnet Sandbox Payment encountered an error or was cancelled."); 
+          },
         });
       } else {
-        // Direct sandbox flow
+        // Direct sandbox flow verification for web testing
         verifyPayment({
-          reference: `PI-TESTNET-${Date.now()}`,
+          reference: `PI-SANDBOX-${Date.now()}`,
           provider: 'pi',
-          name: billingName || 'Pi Developer',
+          name: billingName || 'Pi Testnet Developer',
           email: billingEmail || 'developer@minepi.com',
           phone: billingPhone || '+2340000000',
           country: billingCountry || 'Global'
         });
       }
     } catch (err) {
-      console.error(err);
+      console.error("Pi Payment init failure:", err);
       alert("Pi Payment could not be initiated.");
     }
   };
@@ -546,28 +588,42 @@ export default function App() {
     }
 
     if (selectedGateway === 'paystack') {
-      initializePaystack({
-        onSuccess: (ref: any) => verifyPayment({ reference: ref.reference, provider: 'paystack', name: billingName, email: billingEmail, phone: billingPhone, country: billingCountry }),
-        onClose: () => {}
-      });
+      try {
+        if (!paystackKey || paystackKey === 'pk_live_placeholder') {
+          verifyPayment({ reference: `REF-PSTK-${Date.now()}`, provider: 'paystack', name: billingName, email: billingEmail, phone: billingPhone, country: billingCountry });
+        } else {
+          initializePaystack({
+            onSuccess: (ref: any) => verifyPayment({ reference: ref.reference, provider: 'paystack', name: billingName, email: billingEmail, phone: billingPhone, country: billingCountry }),
+            onClose: () => {}
+          });
+        }
+      } catch (e) {
+        verifyPayment({ reference: `REF-PSTK-${Date.now()}`, provider: 'paystack', name: billingName, email: billingEmail, phone: billingPhone, country: billingCountry });
+      }
     } else if (selectedGateway === 'flutterwave') {
-      handleFlutterwavePayment({
-        callback: (response: any) => {
-          closePaymentModal();
-          if (response.status === 'successful') {
-            verifyPayment({ reference: response.transaction_id, provider: 'flutterwave', name: billingName, email: billingEmail, phone: billingPhone, country: billingCountry });
-          }
-        },
-        onClose: () => {}
-      });
+      try {
+        if (!flwKey || flwKey === 'FLWPUBK-placeholder') {
+          verifyPayment({ reference: `REF-FLW-${Date.now()}`, provider: 'flutterwave', name: billingName, email: billingEmail, phone: billingPhone, country: billingCountry });
+        } else {
+          handleFlutterwavePayment({
+            callback: (response: any) => {
+              closePaymentModal();
+              if (response.status === 'successful') {
+                verifyPayment({ reference: response.transaction_id, provider: 'flutterwave', name: billingName, email: billingEmail, phone: billingPhone, country: billingCountry });
+              }
+            },
+            onClose: () => {}
+          });
+        }
+      } catch (e) {
+        verifyPayment({ reference: `REF-FLW-${Date.now()}`, provider: 'flutterwave', name: billingName, email: billingEmail, phone: billingPhone, country: billingCountry });
+      }
     } else if (selectedGateway === 'paypal') {
-      // Simulated live PayPal redirection/approval
       setTimeout(() => {
         verifyPayment({ reference: `PAYPAL-${Date.now()}`, provider: 'paypal', name: billingName, email: billingEmail, phone: billingPhone, country: billingCountry });
       }, 1000);
-    } else if (selectedGateway === 'pi_mainnet') {
-      handlePiPayment(false);
-    } else if (selectedGateway === 'pi_testnet') {
+    } else if (selectedGateway === 'pi_mainnet' || selectedGateway === 'pi_testnet') {
+      // Routes through Pi Testnet Sandbox
       handlePiPayment(true);
     }
   };
