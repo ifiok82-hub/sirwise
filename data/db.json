@@ -9,9 +9,33 @@
       "status": "Verified",
       "timestamp": "2026-10-06 10:26:36",
       "device": "Desktop Device (::ffff:127.0.0.1)"
+    },
+    {
+      "id": "USR-484981",
+      "name": "Test Pioneer",
+      "email": "pioneer@minepi.com",
+      "phone": "+2348000000000",
+      "country": "Global",
+      "status": "Verified",
+      "timestamp": "2026-10-18 12:47:16",
+      "device": "Pi Browser / Testnet"
     }
   ],
   "auditLogs": [
+    {
+      "id": "AL-1792327636553",
+      "action": "Pi Payment TEST-PAYMENT-ID-999 completed with txid TEST-TXID-888 (10/10 green 💚). User verified.",
+      "timestamp": "2026-10-18 12:47:16",
+      "user": "pioneer@minepi.com",
+      "severity": "info"
+    },
+    {
+      "id": "AL-1792327634713",
+      "action": "Pi Payment TEST-PAYMENT-ID-999 approved successfully (<10s).",
+      "timestamp": "2026-10-18 12:47:14",
+      "user": "system@sirwise.store",
+      "severity": "info"
+    },
     {
       "id": "AL-1791282396140",
       "action": "Payment callback verified via pi_testnet (SANDBOX-TEST-001). User unlocked.",

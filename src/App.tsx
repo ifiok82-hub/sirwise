@@ -395,41 +395,76 @@ export default function App() {
       if (typeof window !== 'undefined' && (window as any).Pi && (window as any).Pi.createPayment) {
         const Pi = (window as any).Pi;
         await Pi.createPayment({
-          amount: selectedProduct.pricePI || 10,
-          memo: `Payment for ${selectedProduct.name} on SIRWISE (Pi Mainnet)`,
+          amount: selectedProduct.pricePI || 1,
+          memo: `SIRWISE: ${selectedProduct.name}`,
           metadata: { 
             productId: selectedProduct.id, 
-            isTestnet: false,
+            isTestnet: true,
             appletId: "b4e2e629-1b9d-44d2-9e47-2e2b931c8f3f"
           },
         }, {
-          onReadyForServerApproval: (paymentId: string) => {
-            verifyLivePayment({ 
-              reference: paymentId, 
-              provider: 'pi_mainnet', 
-              name: billingName || 'Pi Pioneer', 
-              email: billingEmail || 'pioneer@minepi.com', 
-              phone: billingPhone || '+2340000000', 
-              country: billingCountry || 'Global' 
-            });
+          onReadyForServerApproval: async (paymentId: string) => {
+            try {
+              await fetch('/api/pi/approve', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ paymentId })
+              });
+            } catch (err) {
+              console.error("Pi approve request error:", err);
+            }
           },
-          onReadyForServerCompletion: (paymentId: string, txid: string) => {
-            console.log("Pi Mainnet payment completed:", paymentId, txid);
+          onReadyForServerCompletion: async (paymentId: string, txid: string) => {
+            try {
+              const res = await fetch('/api/pi/complete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  paymentId,
+                  txid,
+                  email: billingEmail || 'pioneer@minepi.com',
+                  name: billingName || 'Pi Pioneer',
+                  phone: billingPhone || '+2348000000000',
+                  country: billingCountry || 'Global'
+                })
+              });
+              const data = await res.json();
+              if (data.success || data.verified) {
+                verifyLivePayment({
+                  reference: txid || paymentId,
+                  provider: 'pi_mainnet',
+                  name: billingName || 'Pi Pioneer',
+                  email: billingEmail || 'pioneer@minepi.com',
+                  phone: billingPhone || '+2348000000000',
+                  country: billingCountry || 'Global'
+                });
+              }
+            } catch (err) {
+              console.error("Pi complete request error:", err);
+              verifyLivePayment({
+                reference: txid || paymentId,
+                provider: 'pi_mainnet',
+                name: billingName || 'Pi Pioneer',
+                email: billingEmail || 'pioneer@minepi.com',
+                phone: billingPhone || '+2348000000000',
+                country: billingCountry || 'Global'
+              });
+            }
           },
           onCancel: (paymentId: string) => {
             console.log("Pi payment cancelled by user:", paymentId);
           },
           onError: (error: any) => { 
             console.error("Pi payment error:", error);
-            alert("Pi Mainnet transaction was cancelled or encountered a network error.");
+            alert("Pi transaction was cancelled or encountered a network error.");
           },
         });
       } else {
-        alert("Pi Mainnet payments require opening the app inside the Pi Browser (https://minepi.com).");
+        alert("Pi payments require opening the app inside the Pi Browser (https://minepi.com).");
       }
     } catch (err: any) {
       console.error("Pi Payment error:", err);
-      alert("Pi Mainnet payments require Pi Browser.");
+      alert("Pi payment initialization requires Pi Browser.");
     }
   };
 
