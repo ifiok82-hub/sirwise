@@ -93,25 +93,6 @@ export default function App() {
       alert("Pi Auth FAILED: " + (e?.message || JSON.stringify(e)));
     }
   };
-  const [piUser, setPiUser] = useState<any>(null);
-  const signInWithPi = async () => {
-    const Pi = (window as any).Pi;
-    if (!Pi) {
-      alert("Please open this app inside Pi Browser to Sign in with Pi. Open Pi Browser > type sirwise.vercel.app");
-      return;
-    }
-    Pi.init({ version: "2.0", sandbox: false });
-    try {
-      const auth = await Pi.authenticate(['username','payments','wallet_address'], (payment: any) => {
-        console.log("Incomplete payment", payment);
-      });
-      alert("Welcome @" + auth.user.username + " - Pi Connected ✅");
-      localStorage.setItem("sirwise_pi_user", JSON.stringify(auth.user));
-      setPiUser(auth.user);
-    } catch (e) {
-      alert("Pi Sign-in cancelled or failed");
-    }
-  };
   // Navigation tab states: 'marketplace' | 'downloads' | 'professor' | 'compliance' | 'privacy' | 'terms'
   const [currentTab, setCurrentTab] = useState<'marketplace' | 'downloads' | 'professor' | 'compliance' | 'privacy' | 'terms'>('marketplace');
   const [marketCategory, setMarketCategory] = useState<'all' | 'courses' | 'ebooks' | 'templates' | 'saas' | 'assets' | 'consulting'>('all');
