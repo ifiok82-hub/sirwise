@@ -11,7 +11,7 @@ export default defineConfig(() => {
       tailwindcss(),
       VitePWA({
         registerType: 'autoUpdate',
-        includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'icon.svg'],
+        includeAssets: ['sirwise-logo.png', 'validation-key.txt', 'pi-app-validation.txt'],
         manifest: {
           id: '/',
           name: 'SIRWISE Global Digital Hub',
@@ -24,27 +24,28 @@ export default defineConfig(() => {
           scope: '/',
           icons: [
             {
-              src: '/pwa-192x192.png',
+              src: '/sirwise-logo.png',
               sizes: '192x192',
               type: 'image/png',
               purpose: 'any',
             },
             {
-              src: '/pwa-512x512.png',
+              src: '/sirwise-logo.png',
               sizes: '512x512',
               type: 'image/png',
-              purpose: 'any',
-            },
-            {
-              src: '/pwa-maskable-512x512.png',
-              sizes: '512x512',
-              type: 'image/png',
-              purpose: 'maskable',
+              purpose: 'any maskable',
             },
           ],
         },
         workbox: {
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
+          navigateFallbackDenylist: [
+            /^\/api\//,
+            /^\/downloads\//,
+            /^\/validation-key\.txt$/,
+            /^\/pi-app-validation\.txt$/,
+            /^\/sitemap\.xml$/,
+          ],
           runtimeCaching: [
             {
               urlPattern: /^https:\/\/api\.js\/?.*/i,
@@ -60,11 +61,14 @@ export default defineConfig(() => {
           ],
         },
         devOptions: {
-          enabled: true,
-          type: 'module',
+          enabled: false,
         },
       }),
     ],
+    build: {
+      outDir: 'dist',
+      emptyOutDir: true,
+    },
     define: {
       'process.env.PI_TESTNET_ENABLED': JSON.stringify(process.env.PI_TESTNET_ENABLED ?? 'true'),
       'process.env.NEXT_PUBLIC_PI_TESTNET_ENABLED': JSON.stringify(process.env.NEXT_PUBLIC_PI_TESTNET_ENABLED ?? process.env.PI_TESTNET_ENABLED ?? 'true'),
@@ -76,7 +80,7 @@ export default defineConfig(() => {
     },
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, '.'),
+        '@': path.resolve(import.meta.dirname, '.'),
       },
     },
     server: {
