@@ -6,8 +6,6 @@ export default function handler(req: ApiRequest, res: ApiResponse) {
     PLATFORM: 'SIRWISE Global Digital Hub',
     CHARTER: 'RC BN3583778',
     PI_TESTNET_ENABLED: process.env.PI_TESTNET_ENABLED !== 'false',
-    PAYSTACK_PUBLIC_KEY: process.env.PAYSTACK_PUBLIC_KEY || process.env.VITE_PAYSTACK_PUBLIC_KEY || '',
-    FLUTTERWAVE_PUBLIC_KEY: process.env.FLUTTERWAVE_PUBLIC_KEY || process.env.VITE_FLW_PUBLIC_KEY || process.env.VITE_FLUTTERWAVE_PUBLIC_KEY || '',
     PI_API_KEY_CONFIGURED: !!process.env.PI_API_KEY,
     PI_MAINNET_KYC_WALLET: process.env.PI_MAINNET_KYC_WALLET || '',
     VALIDATION_KEY:

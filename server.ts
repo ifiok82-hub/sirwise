@@ -186,10 +186,10 @@ app.get('/api/products', (req: Request, res: Response) => {
 
 // ... (keep existing setup)
 
-// Endpoint to verify payment transaction (Paystack/Flutterwave/Pi)
+// Endpoint to verify payment transaction (Pi Mainnet / Testnet)
 app.post('/api/verify-payment', async (req: Request, res: Response) => {
   try {
-    const { reference, provider, name, email, phone, country, paymentId } = req.body;
+    const { reference, provider, name, email, phone, country } = req.body;
 
     if (!reference || !provider || !name || !email || !phone || !country) {
       res.status(400).json({ success: false, error: 'Missing required payment details' });
@@ -201,33 +201,9 @@ app.post('/api/verify-payment', async (req: Request, res: Response) => {
     const userAgent = req.headers['user-agent'] || 'Unknown Device';
     const deviceType = userAgent.includes('Mobile') ? 'Mobile Device' : 'Desktop Device';
 
-    // Verify with provider server-side
+    // Verify with Pi Network server-side
     let isVerified = false;
-    if (provider === 'paystack') {
-        const secret = process.env.PAYSTACK_SECRET_KEY;
-        if (secret && !secret.includes('placeholder')) {
-          const response = await fetch(`https://api.paystack.co/transaction/verify/${reference}`, {
-              headers: { Authorization: `Bearer ${secret}` }
-          });
-          const data = await response.json();
-          isVerified = data.status && data.data.status === 'success';
-        } else {
-          // If in test mode or keys pending, verify mock reference for test flow
-          isVerified = true;
-        }
-    } else if (provider === 'flutterwave') {
-        const secret = process.env.FLUTTERWAVE_SECRET_KEY;
-        if (secret && !secret.includes('placeholder')) {
-          const response = await fetch(`https://api.flutterwave.com/v3/transactions/${reference}/verify`, {
-              headers: { Authorization: `Bearer ${secret}` }
-          });
-          const data = await response.json();
-          isVerified = data.status === 'success' && data.data.status === 'successful';
-        } else {
-          isVerified = true;
-        }
-    } else if (provider === 'pi' || provider === 'pi_mainnet' || provider === 'pi_testnet') {
-        // Implement Pi Mainnet/Testnet KYC verification
+    if (provider === 'pi' || provider === 'pi_mainnet' || provider === 'pi_testnet') {
         const isTestnet = provider === 'pi_testnet' || process.env.PI_TESTNET_ENABLED === 'true' || reference.startsWith('TEST-') || reference.startsWith('SANDBOX-') || reference.startsWith('PI-SANDBOX-');
         isVerified = true; 
         
@@ -600,8 +576,6 @@ app.get('/api/config', (req: Request, res: Response) => {
     PLATFORM: 'SIRWISE Global Digital Hub',
     CHARTER: 'RC BN3583778',
     PI_TESTNET_ENABLED: process.env.PI_TESTNET_ENABLED !== 'false',
-    PAYSTACK_PUBLIC_KEY: process.env.PAYSTACK_PUBLIC_KEY || process.env.VITE_PAYSTACK_PUBLIC_KEY || '',
-    FLUTTERWAVE_PUBLIC_KEY: process.env.FLUTTERWAVE_PUBLIC_KEY || process.env.VITE_FLW_PUBLIC_KEY || process.env.VITE_FLUTTERWAVE_PUBLIC_KEY || '',
     PI_API_KEY_CONFIGURED: !!process.env.PI_API_KEY,
     PI_MAINNET_KYC_WALLET: process.env.PI_MAINNET_KYC_WALLET || '',
     VALIDATION_KEY: process.env.VALIDATION_KEY || 'f1d2fd990366c6095405cabec435395ab465da166fa9a20d93eb95175cafee6ef988eddcf245344be1f69b19b70712896cd5ce371bf0a8da46ff77f0b5000bc1'

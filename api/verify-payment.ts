@@ -20,31 +20,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const deviceType = userAgent.includes('Mobile') ? 'Mobile Device' : 'Desktop Device';
 
     let isVerified = false;
-    if (provider === 'paystack') {
-      const secret = process.env.PAYSTACK_SECRET_KEY;
-      if (secret && !secret.includes('placeholder')) {
-        const response = await fetch(`https://api.paystack.co/transaction/verify/${reference}`, {
-          headers: { Authorization: `Bearer ${secret}` },
-        });
-        const data: any = await response.json();
-        isVerified = Boolean(data.status && data.data?.status === 'success');
-      } else {
-        isVerified = true;
-      }
-    } else if (provider === 'flutterwave') {
-      const secret = process.env.FLUTTERWAVE_SECRET_KEY;
-      if (secret && !secret.includes('placeholder')) {
-        const response = await fetch(`https://api.flutterwave.com/v3/transactions/${reference}/verify`, {
-          headers: { Authorization: `Bearer ${secret}` },
-        });
-        const data: any = await response.json();
-        isVerified = Boolean(data.status === 'success' && data.data?.status === 'successful');
-      } else {
-        isVerified = true;
-      }
-    } else if (provider === 'paypal') {
-      isVerified = true;
-    } else if (provider === 'pi' || provider === 'pi_mainnet' || provider === 'pi_testnet') {
+    if (provider === 'pi' || provider === 'pi_mainnet' || provider === 'pi_testnet') {
       const isTestnet =
         provider === 'pi_testnet' ||
         process.env.PI_TESTNET_ENABLED === 'true' ||

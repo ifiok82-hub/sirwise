@@ -31,8 +31,6 @@ import {
   ArrowLeft
 } from 'lucide-react';
 import { usePWAInstall } from './usePWAInstall';
-import { usePaystackPayment } from 'react-paystack';
-import { useFlutterwave, closePaymentModal } from 'flutterwave-react-v3';
 import { SirwiseLogo } from './components/SirwiseLogo';
 import countriesData from '../data/countries.json';
 import { OFFICIAL_PRODUCTS, DigitalProduct } from './data/products';
@@ -140,7 +138,7 @@ export default function App() {
   const [billingName, setBillingName] = useState('');
   const [billingPhone, setBillingPhone] = useState('');
   const [billingCountry, setBillingCountry] = useState('Nigeria');
-  const [selectedGateway, setSelectedGateway] = useState<'paystack' | 'flutterwave' | 'paypal' | 'pi_mainnet'>('paystack');
+  const [selectedGateway, setSelectedGateway] = useState<'pi_mainnet'>('pi_mainnet');
 
   // Selected verification product state
   const [selectedProduct, setSelectedProduct] = useState<DigitalProduct | null>(null);
@@ -262,31 +260,6 @@ export default function App() {
       .catch(() => {});
   }, []);
 
-  // Dynamic Payment Keys from Vercel / Server Config
-  const [paystackKey, setPaystackKey] = useState<string>(
-    () => (typeof process !== 'undefined' && (process.env.PAYSTACK_PUBLIC_KEY || process.env.VITE_PAYSTACK_PUBLIC_KEY)) || import.meta.env.VITE_PAYSTACK_PUBLIC_KEY || ''
-  );
-  const [flwKey, setFlwKey] = useState<string>(
-    () => (typeof process !== 'undefined' && (process.env.FLUTTERWAVE_PUBLIC_KEY || process.env.VITE_FLW_PUBLIC_KEY || process.env.VITE_FLUTTERWAVE_PUBLIC_KEY)) || import.meta.env.VITE_FLW_PUBLIC_KEY || import.meta.env.VITE_FLUTTERWAVE_PUBLIC_KEY || ''
-  );
-
-  // Sync dynamic keys and configuration from server
-  useEffect(() => {
-    fetch('/api/config')
-      .then(res => res.json())
-      .then(cfg => {
-        if (cfg) {
-          if (cfg.PAYSTACK_PUBLIC_KEY && cfg.PAYSTACK_PUBLIC_KEY.trim()) {
-            setPaystackKey(cfg.PAYSTACK_PUBLIC_KEY.trim());
-          }
-          if (cfg.FLUTTERWAVE_PUBLIC_KEY && cfg.FLUTTERWAVE_PUBLIC_KEY.trim()) {
-            setFlwKey(cfg.FLUTTERWAVE_PUBLIC_KEY.trim());
-          }
-        }
-      })
-      .catch(() => {});
-  }, []);
-
   // Pi Network SDK Initialization
   useEffect(() => {
     const isSandboxActive = (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_PI_TESTNET_ENABLED === "true") ||
@@ -308,26 +281,6 @@ export default function App() {
       setIsPiBrowser(true);
     }
   }, []);
-
-  // Paystack & Flutterwave Payment Configuration (Connected with Live Keys)
-  const paystackConfig = {
-    reference: `REF-PSTK-${Date.now()}`,
-    email: billingEmail || 'member@sirwise.store',
-    amount: (selectedProduct?.priceUSD || 99) * 100 * 1500, // converted NGN in kobo
-    publicKey: paystackKey || 'pk_live_placeholder',
-  };
-  const initializePaystack = usePaystackPayment(paystackConfig);
-
-  const flwConfig = {
-    public_key: flwKey || 'FLWPUBK-placeholder',
-    tx_ref: `REF-FLW-${Date.now()}`,
-    amount: (selectedProduct?.priceUSD || 99) * 1500,
-    currency: 'NGN',
-    payment_options: 'card,mobilemoney,ussd',
-    customer: { email: billingEmail || 'member@sirwise.store', phone_number: billingPhone || '+2348000000000', name: billingName || 'Sirwise Partner' },
-    customizations: { title: 'SIRWISE Global Digital Hub', description: selectedProduct?.name || 'Digital Asset', logo: 'https://sirwise.vercel.app/sirwise-logo.png' },
-  };
-  const handleFlutterwavePayment = useFlutterwave(flwConfig);
 
   // Server-side Payment Verification — Activates unlock ONLY upon verified gateway callback
   const verifyLivePayment = async (payload: any) => {
@@ -625,14 +578,10 @@ export default function App() {
     setBillingEmail(currentUser.email || '');
     setBillingPhone(currentUser.phone || '');
     setBillingCountry(currentUser.country || 'Nigeria');
-    if (isPiBrowser) {
-      setSelectedGateway('pi_mainnet');
-    } else {
-      setSelectedGateway('paystack');
-    }
+    setSelectedGateway('pi_mainnet');
   };
 
-  // Perform Live Gateway Payment
+  // Perform Live Pi Gateway Payment
   const executePayment = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedProduct) return;
@@ -642,44 +591,7 @@ export default function App() {
       return;
     }
 
-    if (selectedGateway === 'paystack') {
-      try {
-        if (!paystackKey || paystackKey === 'pk_live_placeholder') {
-          verifyLivePayment({ reference: `REF-PSTK-${Date.now()}`, provider: 'paystack', name: billingName, email: billingEmail, phone: billingPhone, country: billingCountry });
-        } else {
-          initializePaystack({
-            onSuccess: (ref: any) => verifyLivePayment({ reference: ref.reference, provider: 'paystack', name: billingName, email: billingEmail, phone: billingPhone, country: billingCountry }),
-            onClose: () => {}
-          });
-        }
-      } catch (e) {
-        verifyLivePayment({ reference: `REF-PSTK-${Date.now()}`, provider: 'paystack', name: billingName, email: billingEmail, phone: billingPhone, country: billingCountry });
-      }
-    } else if (selectedGateway === 'flutterwave') {
-      try {
-        if (!flwKey || flwKey === 'FLWPUBK-placeholder') {
-          verifyLivePayment({ reference: `REF-FLW-${Date.now()}`, provider: 'flutterwave', name: billingName, email: billingEmail, phone: billingPhone, country: billingCountry });
-        } else {
-          handleFlutterwavePayment({
-            callback: (response: any) => {
-              closePaymentModal();
-              if (response.status === 'successful') {
-                verifyLivePayment({ reference: response.transaction_id, provider: 'flutterwave', name: billingName, email: billingEmail, phone: billingPhone, country: billingCountry });
-              }
-            },
-            onClose: () => {}
-          });
-        }
-      } catch (e) {
-        verifyLivePayment({ reference: `REF-FLW-${Date.now()}`, provider: 'flutterwave', name: billingName, email: billingEmail, phone: billingPhone, country: billingCountry });
-      }
-    } else if (selectedGateway === 'paypal') {
-      setTimeout(() => {
-        verifyLivePayment({ reference: `PAYPAL-${Date.now()}`, provider: 'paypal', name: billingName, email: billingEmail, phone: billingPhone, country: billingCountry });
-      }, 800);
-    } else if (selectedGateway === 'pi_mainnet') {
-      handlePiMainnetPayment();
-    }
+    handlePiMainnetPayment();
   };
 
   // Filter products by active category
@@ -1018,7 +930,7 @@ export default function App() {
                 <div className="p-4 bg-black/60 rounded-xl border border-zinc-800">
                   <span className="text-[10px] text-emerald-400 uppercase font-bold block mb-1">PAYMENT SECURITY</span>
                   <div className="text-white font-bold text-sm">PCI DSS Level 1</div>
-                  <div className="text-[11px] text-slate-400 mt-1">Paystack, Flutterwave, PayPal, Pi KYC</div>
+                  <div className="text-[11px] text-slate-400 mt-1">Pi Network KYC Wallet Settlement</div>
                 </div>
                 <div className="p-4 bg-black/60 rounded-xl border border-zinc-800">
                   <span className="text-[10px] text-purple-400 uppercase font-bold block mb-1">DATA ENCRYPTION</span>
@@ -1074,7 +986,7 @@ export default function App() {
 
               <h3 className="text-sm font-bold text-[#FFD700] uppercase font-montserrat">2. Information Collection</h3>
               <p>
-                When you initiate an unlock or purchase on SIRWISE, we collect the necessary verification metadata including your legal name, business email address, contact telephone, resident country, and device authentication credentials. Payment information is securely processed via PCI DSS certified gateways (Paystack, Flutterwave, PayPal, Pi Mainnet KYC). No full credit card numbers are stored on our servers.
+                When you initiate an unlock or purchase on SIRWISE, we collect the necessary verification metadata including your legal name, business email address, contact telephone, resident country, and device authentication credentials. Payment information is securely processed via Pi Network KYC Settlement. No full credit card numbers are stored on our servers.
               </p>
 
               <h3 className="text-sm font-bold text-[#FFD700] uppercase font-montserrat">3. Security & Encryption Standards</h3>
@@ -1113,7 +1025,7 @@ export default function App() {
 
               <h3 className="text-sm font-bold text-[#FFD700] uppercase font-montserrat">2. License Grant</h3>
               <p>
-                Upon verified payment callback from authorized gateways (Paystack, Flutterwave, PayPal, or Pi Mainnet KYC Wallet), SIRWISE grants the buyer a revocable, non-exclusive, non-transferable corporate license to download and utilize the selected digital materials.
+                Upon verified payment callback from Pi Mainnet KYC Wallet, SIRWISE grants the buyer a revocable, non-exclusive, non-transferable corporate license to download and utilize the selected digital materials.
               </p>
 
               <h3 className="text-sm font-bold text-[#FFD700] uppercase font-montserrat">3. Intellectual Property Rights</h3>
@@ -1277,7 +1189,7 @@ export default function App() {
                 </div>
                 <h3 className="text-base font-bold text-white mb-2 font-montserrat">Downloads Currently Locked</h3>
                 <p className="text-xs text-slate-400 font-sans mb-6 leading-relaxed">
-                  To release offline course kits, spreadsheet valuation packages, and software blueprints, complete payment verification via Paystack, Flutterwave, PayPal, or Pi Mainnet KYC.
+                  To release offline course kits, spreadsheet valuation packages, and software blueprints, complete payment verification via Pi Mainnet KYC.
                 </p>
                 <button
                   onClick={() => navigateTo('/knowledge-hub')}
@@ -1533,82 +1445,41 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* Step 2: Payment Method (Separated by Browser Environment) */}
+                  {/* Step 2: Payment Method (Pi Network Only) */}
                   <div className="space-y-3 font-sans">
                     <div className="flex items-center justify-between border-b border-[#FFD700]/20 pb-1.5">
                       <span className="text-[11px] text-[#FFD700] uppercase font-black tracking-wider font-montserrat">
                         Step 2: Payment Method
                       </span>
-                      {/* Environment Switcher for Testing */}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const next = !isPiBrowser;
-                          setIsPiBrowser(next);
-                          setSelectedGateway(next ? 'pi_mainnet' : 'paystack');
-                        }}
-                        className="px-2 py-0.5 rounded bg-zinc-900 hover:bg-zinc-850 border border-zinc-700 text-[#FFD700] font-bold text-[9px] transition"
-                        title="Toggle Browser Mode"
-                      >
-                        {isPiBrowser ? '📱 Pi Browser Mode' : '🌐 Standard Browser Mode'}
-                      </button>
+                      <span className="px-2 py-0.5 rounded bg-zinc-900 border border-zinc-700 text-[#FFD700] font-bold text-[9px]">
+                        {isPiBrowser ? '📱 Pi Browser Detected' : '🌐 Pi Network Gateway'}
+                      </span>
                     </div>
 
-                    {/* Live Payment Adapters based on Browser Environment */}
-                    {!isPiBrowser ? (
-                      /* Standard Browser Adapters (Live Gateways Only) */
-                      <div className="space-y-2">
-                        <span className="text-[10px] text-slate-400 block font-montserrat">
-                          Select Live Payment Gateway:
-                        </span>
-                        <div className="grid grid-cols-3 gap-2">
-                          {[
-                            { id: 'paystack', label: 'Paystack', desc: 'Cards & Transfer' },
-                            { id: 'flutterwave', label: 'Flutterwave', desc: 'Global & USSD' },
-                            { id: 'paypal', label: 'PayPal', desc: 'International' },
-                          ].map(gateway => (
-                            <button
-                              key={gateway.id}
-                              type="button"
-                              onClick={() => setSelectedGateway(gateway.id as any)}
-                              className={`p-2.5 rounded-xl border text-left transition duration-200 ${
-                                selectedGateway === gateway.id
-                                  ? 'bg-[#FFD700]/15 border-[#FFD700] text-white shadow-md'
-                                  : 'bg-black border-zinc-850 text-slate-400 hover:border-zinc-700'
-                              }`}
-                            >
-                              <div className="font-bold text-xs text-white font-montserrat">{gateway.label}</div>
-                              <div className="text-[9px] text-slate-400">{gateway.desc}</div>
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    ) : (
-                      /* Pi Browser Adapters (Pi Mainnet KYC Only) */
-                      <div className="space-y-2.5">
-                        <span className="text-[10px] text-purple-300 block font-montserrat">
-                          Pi Ecosystem Live Gateway:
-                        </span>
-                        <div className="p-3 rounded-xl border border-[#FFD700] bg-[#FFD700]/10 flex items-center justify-between">
-                          <div>
-                            <div className="font-bold text-xs text-white flex items-center gap-1.5 font-montserrat">
-                              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                              Pi Mainnet (KYC Wallet)
-                            </div>
-                            <div className="text-[10px] text-slate-300 mt-0.5">
-                              Verified Mainnet Pioneer Settlement • Live KYC Enforced
-                            </div>
+                    {/* Pi Ecosystem Live Gateway */}
+                    <div className="space-y-2.5">
+                      <span className="text-[10px] text-purple-300 block font-montserrat">
+                        Pi Ecosystem Live Gateway:
+                      </span>
+                      <div className="p-3 rounded-xl border border-[#FFD700] bg-[#FFD700]/10 flex items-center justify-between">
+                        <div>
+                          <div className="font-bold text-xs text-white flex items-center gap-1.5 font-montserrat">
+                            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                            Pi Mainnet (KYC Wallet)
                           </div>
-                          <button
-                            type="button"
-                            onClick={handlePiAuth}
-                            className="px-2.5 py-1 bg-[#FFD700] hover:bg-yellow-400 text-black text-[10px] font-black rounded-lg uppercase font-montserrat transition"
-                          >
-                            Sync Pi Auth
-                          </button>
+                          <div className="text-[10px] text-slate-300 mt-0.5">
+                            Verified Mainnet Pioneer Settlement • Live KYC Enforced
+                          </div>
                         </div>
+                        <button
+                          type="button"
+                          onClick={handlePiAuth}
+                          className="px-2.5 py-1 bg-[#FFD700] hover:bg-yellow-400 text-black text-[10px] font-black rounded-lg uppercase font-montserrat transition"
+                        >
+                          Sync Pi Auth
+                        </button>
                       </div>
-                    )}
+                    </div>
 
                     {/* SEPARATED DEVELOPER TEST BUTTON: Developer Test Only */}
                     <div className="pt-3 border-t border-purple-500/20 space-y-2">
