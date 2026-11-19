@@ -68,7 +68,31 @@ interface VerifiedUserRecord {
 
 export default function App() {
   const { isInstallable, isInstalled, install } = usePWAInstall();
-  // Pi Auth - Sign in with Pi
+  // Pi Auth - Sign in with Pi - DEBUG VERSION
+  const [piUser, setPiUser] = useState<any>(() => {
+    try { return JSON.parse(localStorage.getItem("sirwise_pi_user") || "null"); } catch { return null; }
+  });
+  const signInWithPi = async () => {
+    alert("Button tapped - checking Pi...");
+    const Pi = (window as any).Pi;
+    if (!Pi) {
+      alert("ERROR: window.Pi NOT FOUND. You are NOT in Pi Browser. Please open Pi Browser app > type sirwise.vercel.app > tap button again. Chrome will NOT work.");
+      return;
+    }
+    alert("Pi found! Initializing...");
+    try {
+      Pi.init({ version: "2.0", sandbox: false });
+      alert("Pi.init OK. Opening Pi Auth popup...");
+      const auth = await Pi.authenticate(['username','payments','wallet_address'], (payment: any) => {
+        console.log("Incomplete payment", payment);
+      });
+      alert("SUCCESS! Welcome @" + auth.user.username);
+      localStorage.setItem("sirwise_pi_user", JSON.stringify(auth.user));
+      setPiUser(auth.user);
+    } catch (e: any) {
+      alert("Pi Auth FAILED: " + (e?.message || JSON.stringify(e)));
+    }
+  };
   const [piUser, setPiUser] = useState<any>(null);
   const signInWithPi = async () => {
     const Pi = (window as any).Pi;
