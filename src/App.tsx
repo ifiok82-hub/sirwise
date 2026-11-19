@@ -670,7 +670,9 @@ export default function App() {
                 </span>
               )}
             </button>
-
+<button onClick={signInWithPi} style={{background:"#FFD700", color:"#0B132B", padding:"10px 18px", borderRadius:"8px", fontWeight:"bold", border:"none"}}>
+  {piUser ? `Hi @${piUser.username} ✅` : "Sign in with Pi"}
+</button>
             <button
               onClick={() => navigateTo('/ai-professor')}
               className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-montserrat font-bold uppercase tracking-wider transition duration-200 ${
