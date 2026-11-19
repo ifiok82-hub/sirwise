@@ -68,27 +68,34 @@ interface VerifiedUserRecord {
 
 export default function App() {
   const { isInstallable, isInstalled, install } = usePWAInstall();
-  // Pi Auth - Sign in with Pi - DEBUG VERSION
+    // Pi Auth - Sign in with Pi - App Studio Compatible
   const [piUser, setPiUser] = useState<any>(() => {
     try { return JSON.parse(localStorage.getItem("sirwise_pi_user") || "null"); } catch { return null; }
   });
   const signInWithPi = async () => {
-    alert("Button tapped - checking Pi...");
     const Pi = (window as any).Pi;
     if (!Pi) {
-      alert("ERROR: window.Pi NOT FOUND. You are NOT in Pi Browser. Please open Pi Browser app > type sirwise.vercel.app > tap button again. Chrome will NOT work.");
+      alert("Please open this app inside Pi Browser to Sign in with Pi.");
       return;
     }
-    alert("Pi found! Initializing...");
     try {
       Pi.init({ version: "2.0", sandbox: false });
-      alert("Pi.init OK. Opening Pi Auth popup...");
       const auth = await Pi.authenticate(['username','payments','wallet_address'], (payment: any) => {
         console.log("Incomplete payment", payment);
       });
-      alert("SUCCESS! Welcome @" + auth.user.username);
+      // 1. Save locally
       localStorage.setItem("sirwise_pi_user", JSON.stringify(auth.user));
+      localStorage.setItem("sirwise_pi_access_token", auth.accessToken);
       setPiUser(auth.user);
+      // 2. SEND TOKEN TO APP STUDIO - THIS IS WHAT WAS MISSING
+      const payload = { type: "PI_AUTH_SUCCESS", accessToken: auth.accessToken, user: auth.user, username: auth.user.username };
+      try { window.parent.postMessage(payload, "*"); } catch {}
+      try { window.postMessage(payload, "*"); } catch {}
+      // 3. Also send to backend for verification
+      try {
+        await fetch("/api/pi/auth", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accessToken: auth.accessToken, username: auth.user.username }) });
+      } catch {}
+      alert("SUCCESS! Welcome @" + auth.user.username + " - Now tap Check Again in App Studio");
     } catch (e: any) {
       alert("Pi Auth FAILED: " + (e?.message || JSON.stringify(e)));
     }
