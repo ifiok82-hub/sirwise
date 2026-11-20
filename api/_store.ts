@@ -11,6 +11,7 @@ export interface ApiResponse extends ServerResponse {
   status: (code: number) => ApiResponse;
   json: (data: unknown) => void;
   send: (body: unknown) => void;
+  setHeader: (name: string, value: string | string[]) => this;
 }
 
 export interface DatabaseSchema {

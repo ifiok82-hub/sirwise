@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import { GoogleGenAI } from '@google/genai';
 import fs from 'fs';
+import crypto from 'crypto';
 
 dotenv.config();
 
@@ -14,6 +15,14 @@ const app = express();
 const port = process.env.PORT || 3000;
 
 app.use(express.json());
+app.use((_req, res, next) => {
+  res.removeHeader('X-Frame-Options');
+  res.setHeader(
+    'Content-Security-Policy',
+    "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://sdk.minepi.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' ws: wss: https://socialchain.app https://api.minepi.com https://api.testnet.minepi.com; frame-src 'self' https://*.minepi.com https://*.pinet.com; frame-ancestors 'self' https://aistudio.google.com https://*.google.com https://*.googleusercontent.com https://*.run.app https://*.pinet.com https://*.minepi.com;"
+  );
+  next();
+});
 
 // Initialize Gemini SDK securely
 const geminiApiKey = process.env.GEMINI_API_KEY || '';
@@ -304,6 +313,93 @@ app.all('/api/payment/verify', async (req: Request, res: Response) => {
   } catch (err: any) {
     res.status(500).json({ success: false, status: 'FAILED', error: err.message });
   }
+});
+
+// Pi User Authentication — Server-side accessToken exchange with App Studio
+app.post('/api/pi/auth', async (req: Request, res: Response) => {
+  try {
+    const { accessToken } = req.body || {};
+    if (!accessToken || typeof accessToken !== 'string') {
+      return res.status(400).json({ authenticated: false, error: 'Missing Pi accessToken' });
+    }
+
+    const appStudioRes = await fetch(
+      'https://backend.appstudio-u7cm9zhmha0ruwv8.piappengine.com/pi/auth/v1/login',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accessToken }),
+      }
+    );
+
+    if (!appStudioRes.ok) {
+      const errText = await appStudioRes.text();
+      console.error('App Studio Pi login failed:', appStudioRes.status, errText);
+      return res.status(401).json({ authenticated: false, error: 'Pi authentication verification failed' });
+    }
+
+    const data: any = await appStudioRes.json();
+    const verifiedUid = data?.user?.uid;
+    const verifiedUsername = data?.user?.username;
+
+    if (!verifiedUid || !verifiedUsername) {
+      return res.status(401).json({ authenticated: false, error: 'Invalid App Studio user identity response' });
+    }
+
+    const sessionToken = data?.sessionToken || crypto.randomBytes(24).toString('hex');
+    const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19);
+    const db = getDatabase();
+    const syntheticEmail = `${verifiedUsername}@pi.pioneer`.toLowerCase();
+
+    let user = db.users.find(u => u.email.toLowerCase() === syntheticEmail);
+    if (!user) {
+      user = {
+        id: `PI-${String(verifiedUid).slice(0, 12)}`,
+        name: verifiedUsername,
+        email: syntheticEmail,
+        phone: '+0000000000',
+        country: 'Global',
+        status: 'Pending',
+        timestamp,
+        device: 'Pi Browser'
+      };
+      db.users.push(user);
+    }
+
+    db.auditLogs.unshift({
+      id: `AL-${Date.now()}`,
+      action: `Pi App Studio auth verified for @${verifiedUsername} (uid: ${verifiedUid}).`,
+      timestamp,
+      user: syntheticEmail,
+      severity: 'info'
+    });
+    saveDatabase(db);
+
+    res.setHeader(
+      'Set-Cookie',
+      `sirwise_pi_session=${encodeURIComponent(sessionToken)}; Path=/; HttpOnly; Secure; SameSite=None`
+    );
+
+    return res.json({
+      authenticated: true,
+      sessionToken,
+      user: {
+        uid: verifiedUid,
+        username: verifiedUsername
+      }
+    });
+  } catch (err: any) {
+    console.error('Pi auth endpoint error:', err);
+    return res.status(500).json({ authenticated: false, error: 'Internal authentication error' });
+  }
+});
+
+app.delete('/api/pi/auth', (_req: Request, res: Response) => {
+  res.setHeader(
+    'Set-Cookie',
+    'sirwise_pi_session=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=None'
+  );
+  res.json({ authenticated: false });
 });
 
 // Pi Testnet Approve Endpoint (<10s response)

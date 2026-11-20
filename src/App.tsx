@@ -187,10 +187,15 @@ export default function App() {
   // Logo taps tracker for secret gateway trigger
   const [logoTaps, setLogoTaps] = useState(0);
 
-  // Pi Browser Adapter Detection
+  // Pi Browser & App Studio Authenticated Identity (populated ONLY from /api/pi/auth)
+  const [piAuthUser, setPiAuthUser] = useState<{ uid: string; username: string } | null>(null);
+  const [isPiAuthenticating, setIsPiAuthenticating] = useState(false);
+  const piInitPromiseRef = useRef<Promise<void> | null>(null);
+  const piAuthInFlightRef = useRef(false);
+
   const [isPiBrowser, setIsPiBrowser] = useState(() => {
     if (typeof window !== 'undefined') {
-      return window.navigator.userAgent.toLowerCase().includes('pibrowser') || Boolean((window as any).Pi && (window as any).Pi.createPayment);
+      return window.navigator.userAgent.toLowerCase().includes('pibrowser') || Boolean((window as any).Pi);
     }
     return false;
   });
@@ -291,26 +296,119 @@ export default function App() {
       .catch(() => {});
   }, []);
 
-  // Pi Network SDK Initialization
-  useEffect(() => {
-    const isSandboxActive = (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_PI_TESTNET_ENABLED === "true") ||
-                            (typeof process !== 'undefined' && process.env?.PI_TESTNET_ENABLED === "true") ||
-                            import.meta.env.VITE_PI_TESTNET_ENABLED === "true" ||
-                            true;
-    
-    if (typeof window !== 'undefined' && (window as any).Pi) {
-      try {
-        (window as any).Pi.init({
-          version: "2.0",
-          sandbox: isSandboxActive
+  // Handle incomplete payments reported by Pi.authenticate
+  const onIncompletePaymentFound = async (payment: any) => {
+    console.warn("Incomplete Pi payment detected:", payment);
+    try {
+      const paymentId = payment?.identifier;
+      const txid = payment?.transaction?.txid;
+      if (paymentId && txid) {
+        await fetch('/api/pi/complete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ paymentId, txid }),
         });
+      }
+    } catch (err) {
+      console.error("Failed completing incomplete Pi payment:", err);
+    }
+  };
+
+  // Ensure Pi.init({ version: "2.0" }) is awaited fully before any Pi.authenticate or createPayment call
+  const ensurePiInit = async (): Promise<boolean> => {
+    if (typeof window === 'undefined' || !(window as any).Pi) {
+      return false;
+    }
+    setIsPiBrowser(true);
+    if (!piInitPromiseRef.current) {
+      piInitPromiseRef.current = Promise.resolve(
+        (window as any).Pi.init({ version: "2.0" })
+      ).then(() => undefined);
+    }
+    await piInitPromiseRef.current;
+    return true;
+  };
+
+  // Sign user in with Pi & exchange ONLY accessToken server-side with App Studio
+  const authenticateWithPi = async (interactive = false, scopes: string[] = ['username']) => {
+    if (piAuthInFlightRef.current) return null;
+    const ready = await ensurePiInit();
+    if (!ready) {
+      if (interactive) {
+        alert("Pi Network SDK is accessible inside the Pi Browser (https://minepi.com).");
+      }
+      return null;
+    }
+
+    piAuthInFlightRef.current = true;
+    setIsPiAuthenticating(true);
+    try {
+      const Pi = (window as any).Pi;
+      const auth = await Pi.authenticate(scopes, onIncompletePaymentFound);
+      const accessToken = auth?.accessToken;
+      if (!accessToken) {
+        throw new Error("Missing Pi accessToken");
+      }
+
+      // Exchange accessToken server-side with App Studio; ignore browser-supplied uid/username
+      const res = await fetch('/api/pi/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accessToken }),
+      });
+      const data = await res.json();
+
+      if (!res.ok || !data?.authenticated || !data?.user?.uid || !data?.user?.username) {
+        throw new Error(data?.error || "App Studio authentication failed");
+      }
+
+      const verifiedUser = {
+        uid: String(data.user.uid),
+        username: String(data.user.username),
+      };
+      setPiAuthUser(verifiedUser);
+      setBillingName(verifiedUser.username);
+      setBillingEmail(`${verifiedUser.username}@pi.pioneer`);
+      setBillingPhone("+2348000000000");
+      setBillingCountry("Nigeria");
+      return verifiedUser;
+    } catch (err: any) {
+      console.error("Pi authentication error:", err);
+      if (interactive) {
+        alert("Could not complete Pi sign-in. Please open inside Pi Browser and try again.");
+      }
+      return null;
+    } finally {
+      piAuthInFlightRef.current = false;
+      setIsPiAuthenticating(false);
+    }
+  };
+
+  // Pi Network SDK Initialization & On-Load Authentication
+  useEffect(() => {
+    let cancelled = false;
+
+    const runInitAndAuth = async () => {
+      if (typeof window === 'undefined') return;
+      if (window.navigator.userAgent.toLowerCase().includes('pibrowser')) {
         setIsPiBrowser(true);
+      }
+      if (!(window as any).Pi) return;
+
+      try {
+        const initialized = await ensurePiInit();
+        if (initialized && !cancelled) {
+          await authenticateWithPi(false, ['username']);
+        }
       } catch (err) {
         console.error("Pi SDK initialization error:", err);
       }
-    } else if (typeof window !== 'undefined' && window.navigator.userAgent.toLowerCase().includes('pibrowser')) {
-      setIsPiBrowser(true);
-    }
+    };
+
+    runInitAndAuth();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Server-side Payment Verification — Activates unlock ONLY upon verified gateway callback
@@ -347,28 +445,9 @@ export default function App() {
     }
   };
 
-  // Pi Browser Auth trigger
+  // Pi Browser Auth trigger (for Sign-In & Checkout Sync buttons)
   const handlePiAuth = async () => {
-    if (typeof window === 'undefined' || !(window as any).Pi) {
-      alert("Pi Network SDK is accessible inside the Pi Browser (https://minepi.com).");
-      return;
-    }
-    try {
-      const Pi = (window as any).Pi;
-      const auth = await Pi.authenticate(['username', 'payments'], (payment: any) => {
-        console.warn("Incomplete payment detected:", payment);
-      });
-      if (auth && auth.user) {
-        const piUsername = auth.user.username;
-        setBillingName(piUsername || '');
-        setBillingEmail(`${piUsername}@pi.pioneer`);
-        setBillingPhone("+2348000000000");
-        setBillingCountry("Nigeria");
-      }
-    } catch (err: any) {
-      console.error("Pi authentication error:", err);
-      alert("Could not sync Pi profile automatically. Please fill details manually.");
-    }
+    await authenticateWithPi(true, ['username']);
   };
 
   // Live Pi Mainnet Payment execution
@@ -376,14 +455,17 @@ export default function App() {
     if (!selectedProduct) return;
 
     try {
-      if (typeof window !== 'undefined' && (window as any).Pi && (window as any).Pi.createPayment) {
+      const ready = await ensurePiInit();
+      if (ready && (window as any).Pi && (window as any).Pi.createPayment) {
         const Pi = (window as any).Pi;
+        // Ensure payments scope & server-verified Pi session before creating payment
+        await authenticateWithPi(false, ['username', 'payments']);
+
         await Pi.createPayment({
           amount: selectedProduct.pricePI || 1,
           memo: `SIRWISE: ${selectedProduct.name}`,
           metadata: { 
             productId: selectedProduct.id, 
-            isTestnet: true,
             appletId: "b4e2e629-1b9d-44d2-9e47-2e2b931c8f3f"
           },
         }, {
@@ -707,6 +789,20 @@ export default function App() {
             >
               <ShieldCheck className="w-3.5 h-3.5 text-[#FFD700]" />
               <span>Compliance Protocol</span>
+            </button>
+
+            <button
+              onClick={handlePiAuth}
+              disabled={isPiAuthenticating}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-montserrat font-bold uppercase tracking-wider transition duration-200 border border-[#FFD700]/40 bg-[#FFD700]/10 text-[#FFD700] hover:bg-[#FFD700] hover:text-[#0B132B] shrink-0"
+            >
+              <span>
+                {piAuthUser
+                  ? `@${piAuthUser.username}`
+                  : isPiAuthenticating
+                    ? 'Signing in...'
+                    : 'Sign in with Pi'}
+              </span>
             </button>
           </nav>
 
