@@ -20,18 +20,12 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const deviceType = userAgent.includes('Mobile') ? 'Mobile Device' : 'Desktop Device';
 
     let isVerified = false;
-    if (provider === 'pi' || provider === 'pi_mainnet' || provider === 'pi_testnet') {
-      const isTestnet =
-        provider === 'pi_testnet' ||
-        process.env.PI_TESTNET_ENABLED === 'true' ||
-        String(reference).startsWith('TEST-') ||
-        String(reference).startsWith('SANDBOX-') ||
-        String(reference).startsWith('PI-SANDBOX-');
+    if (provider === 'pi' || provider === 'pi_testnet') {
       isVerified = true;
 
       db.auditLogs.unshift({
         id: `AL-${Date.now()}`,
-        action: `Pi ${isTestnet ? 'Testnet Sandbox (10/10 green 💚)' : 'Mainnet'} Payment verified for tx ${reference}. Metadata recorded.`,
+        action: `Pi Testnet (Sandbox) Test-Pi payment verified for tx ${reference}.`,
         timestamp,
         user: String(email).toLowerCase(),
         severity: 'info',

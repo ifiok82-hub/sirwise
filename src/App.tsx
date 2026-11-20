@@ -123,7 +123,7 @@ export default function App() {
   const [adminError, setAdminError] = useState('');
   const [adminPanelOpen, setAdminPanelOpen] = useState(false);
   const [adminLoggedIn, setAdminLoggedIn] = useState(false);
-  const [adminActiveTab, setAdminActiveTab] = useState<'transactions' | 'users' | 'products' | 'kyc' | 'fraud' | 'logs'>('transactions');
+  const [adminActiveTab, setAdminActiveTab] = useState<'transactions' | 'users' | 'products' | 'fraud' | 'logs'>('transactions');
   const [inactivityTimer, setInactivityTimer] = useState(180); // 3 minutes lockout
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -138,7 +138,7 @@ export default function App() {
   const [billingName, setBillingName] = useState('');
   const [billingPhone, setBillingPhone] = useState('');
   const [billingCountry, setBillingCountry] = useState('Nigeria');
-  const [selectedGateway, setSelectedGateway] = useState<'pi_mainnet'>('pi_mainnet');
+  const [selectedGateway, setSelectedGateway] = useState<'pi_testnet'>('pi_testnet');
 
   // Selected verification product state
   const [selectedProduct, setSelectedProduct] = useState<DigitalProduct | null>(null);
@@ -305,7 +305,7 @@ export default function App() {
     }
   };
 
-  // Wait briefly for https://sdk.minepi.com/pi-sdk.js if needed, then call Pi.init({ version: "2.0", sandbox: false }) ONCE
+  // Wait briefly for https://sdk.minepi.com/pi-sdk.js if needed, then call Pi.init({ version: "2.0", sandbox: true }) ONCE
   const ensurePiInit = async (): Promise<boolean> => {
     if (typeof window === 'undefined') return false;
 
@@ -325,7 +325,7 @@ export default function App() {
     if (!piInitPromiseRef.current) {
       piInitPromiseRef.current = (async () => {
         try {
-          await Promise.resolve((window as any).Pi.init({ version: "2.0", sandbox: false }));
+          await Promise.resolve((window as any).Pi.init({ version: "2.0", sandbox: true }));
           return true;
         } catch (err) {
           console.error("Pi.init error:", err);
@@ -462,8 +462,8 @@ export default function App() {
     await authenticateWithPi(true);
   };
 
-  // Live Pi Mainnet Payment execution
-  const handlePiMainnetPayment = async () => {
+  // Pi Testnet (Sandbox) Payment execution — Test-Pi Only
+  const handlePiTestnetPayment = async () => {
     if (!selectedProduct) return;
     setPiNotice('');
 
@@ -488,11 +488,13 @@ export default function App() {
       }
 
       const Pi = (window as any).Pi;
+      const testPiAmount = selectedProduct.pricePI || 1;
       await Pi.createPayment({
-        amount: selectedProduct.pricePI || 1,
-        memo: `SIRWISE: ${selectedProduct.name}`.slice(0, 28),
+        amount: testPiAmount,
+        memo: `SIRWISE Test: ${selectedProduct.name}`.slice(0, 28),
         metadata: { 
-          productId: selectedProduct.id, 
+          productId: selectedProduct.id,
+          isTestnet: true,
           appletId: "b4e2e629-1b9d-44d2-9e47-2e2b931c8f3f"
         },
       }, {
@@ -525,7 +527,7 @@ export default function App() {
             if (data.success || data.verified) {
               await verifyLivePayment({
                 reference: txid || paymentId,
-                provider: 'pi_mainnet',
+                provider: 'pi_testnet',
                 name: billingName || activeUser.username,
                 email: billingEmail || `${activeUser.username}@pi.pioneer`,
                 phone: billingPhone || '+2348000000000',
@@ -536,7 +538,7 @@ export default function App() {
             console.error("Pi complete request error:", err);
             await verifyLivePayment({
               reference: txid || paymentId,
-              provider: 'pi_mainnet',
+              provider: 'pi_testnet',
               name: billingName || activeUser.username,
               email: billingEmail || `${activeUser.username}@pi.pioneer`,
               phone: billingPhone || '+2348000000000',
@@ -551,7 +553,7 @@ export default function App() {
         onError: (error: any) => { 
           console.error("Pi payment error:", error);
           setIsSubmittingCheckout(false);
-          setPiNotice(error?.message || "Pi transaction encountered a network error.");
+          setPiNotice(error?.message || "Pi Testnet transaction encountered a network error.");
         },
       });
     } catch (err: any) {
@@ -619,7 +621,7 @@ export default function App() {
           { id: 'USR-773821', name: 'Elena Rostova', email: 'elena.rostova@capital.ch', phone: '+41791234567', country: 'Switzerland', status: 'Verified', timestamp: '2026-10-06 02:04:33', device: 'Mobile Safari' }
         ]);
         setAdminLogs([
-          { id: 'AL-101', action: 'Pi Mainnet KYC transaction confirmed for USR-882914.', timestamp: '2026-10-06 01:20:12', user: 'SYSTEM-PI', severity: 'info' },
+          { id: 'AL-101', action: 'Pi Testnet (Sandbox) transaction logged for USR-882914.', timestamp: '2026-10-06 01:20:12', user: 'SYSTEM-PI', severity: 'info' },
           { id: 'AL-102', action: 'Licensed download released for Sovereign Wealth Guide.', timestamp: '2026-10-06 02:05:00', user: 'elena.rostova@capital.ch', severity: 'info' }
         ]);
         setIsLoadingAdminRecords(false);
@@ -720,10 +722,10 @@ export default function App() {
     setBillingEmail(currentUser.email || (piAuthUser ? `${piAuthUser.username}@pi.pioneer` : ''));
     setBillingPhone(currentUser.phone || '');
     setBillingCountry(currentUser.country || 'Nigeria');
-    setSelectedGateway('pi_mainnet');
+    setSelectedGateway('pi_testnet');
   };
 
-  // Perform Live Pi Gateway Payment
+  // Perform Pi Testnet Payment
   const executePayment = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedProduct) return;
@@ -733,7 +735,7 @@ export default function App() {
       return;
     }
 
-    handlePiMainnetPayment();
+    handlePiTestnetPayment();
   };
 
   // Filter products by active category
@@ -934,7 +936,7 @@ export default function App() {
                 <div className="flex flex-wrap gap-2 border-b border-zinc-850 pb-3">
                   {[
                     { id: 'transactions', label: 'Transactions' },
-                    { id: 'users', label: 'Users & KYC' },
+                    { id: 'users', label: 'Users' },
                     { id: 'products', label: 'Products' },
                     { id: 'fraud', label: 'Fraud Alerts' },
                     { id: 'logs', label: 'Audit Trail' }
@@ -975,11 +977,11 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Tab: Users & KYC */}
+                {/* Tab: Users & Transactions */}
                 {(adminActiveTab === 'users' || adminActiveTab === 'transactions') && (
                   <div className="bg-black rounded-xl border border-zinc-850 overflow-x-auto">
                     <div className="p-3 border-b border-zinc-850 flex justify-between items-center">
-                      <span className="font-bold text-white uppercase">User Transactions & KYC Registrations</span>
+                      <span className="font-bold text-white uppercase">User Transactions & Registrations</span>
                       <button onClick={fetchAdminRecords} className="text-[10px] text-[#FFD700] hover:underline">
                         Refresh Records
                       </button>
@@ -1073,7 +1075,7 @@ export default function App() {
                 </h1>
               </div>
               <p className="text-xs sm:text-sm text-slate-300 leading-relaxed font-sans">
-                Official chartered business registration RC BN3583778. Operating under international digital asset distribution, GDPR, and PCI DSS compliance protocols.
+                Official chartered business registration RC BN3583778. Currently operating in Pi Testnet (Sandbox) for Pi Review — Test-Pi only, no real Pi is charged.
               </p>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-8">
@@ -1083,14 +1085,14 @@ export default function App() {
                   <div className="text-[11px] text-slate-400 mt-1">Federal Republic of Nigeria Licensed</div>
                 </div>
                 <div className="p-4 bg-black/60 rounded-xl border border-zinc-800">
-                  <span className="text-[10px] text-emerald-400 uppercase font-bold block mb-1">PAYMENT SECURITY</span>
-                  <div className="text-white font-bold text-sm">PCI DSS Level 1</div>
-                  <div className="text-[11px] text-slate-400 mt-1">Pi Network KYC Wallet Settlement</div>
+                  <span className="text-[10px] text-purple-400 uppercase font-bold block mb-1">PAYMENT ENVIRONMENT</span>
+                  <div className="text-white font-bold text-sm">Pi Testnet (Sandbox)</div>
+                  <div className="text-[11px] text-slate-400 mt-1">Test-Pi Only • No Real Pi Charged</div>
                 </div>
                 <div className="p-4 bg-black/60 rounded-xl border border-zinc-800">
-                  <span className="text-[10px] text-purple-400 uppercase font-bold block mb-1">DATA ENCRYPTION</span>
-                  <div className="text-white font-bold text-sm">256-Bit SSL/TLS</div>
-                  <div className="text-[11px] text-slate-400 mt-1">GDPR & Anomaly Monitoring Enforced</div>
+                  <span className="text-[10px] text-emerald-400 uppercase font-bold block mb-1">DATA PRIVACY</span>
+                  <div className="text-white font-bold text-sm">HTTPS / GDPR</div>
+                  <div className="text-[11px] text-slate-400 mt-1">Session & Audit Monitoring Enforced</div>
                 </div>
               </div>
 
@@ -1141,17 +1143,17 @@ export default function App() {
 
               <h3 className="text-sm font-bold text-[#FFD700] uppercase font-montserrat">2. Information Collection</h3>
               <p>
-                When you initiate an unlock or purchase on SIRWISE, we collect the necessary verification metadata including your legal name, business email address, contact telephone, resident country, and device authentication credentials. Payment information is securely processed via Pi Network KYC Settlement. No full credit card numbers are stored on our servers.
+                When you initiate an unlock or purchase on SIRWISE, we collect the necessary verification metadata including your legal name, business email address, contact telephone, resident country, and Pi username. Payments currently run in Pi Testnet (Sandbox) using Test-Pi only; no real Pi or credit card numbers are collected.
               </p>
 
               <h3 className="text-sm font-bold text-[#FFD700] uppercase font-montserrat">3. Security & Encryption Standards</h3>
               <p>
-                All data in transit is encrypted using 256-bit Secure Socket Layer (SSL/TLS) encryption. Our servers employ hardened access controls, audit trail monitoring, DDoS shielding, and automated anomaly detection.
+                All data in transit is served over HTTPS. Our servers employ access controls, audit trail monitoring, and automated anomaly detection.
               </p>
 
               <h3 className="text-sm font-bold text-[#FFD700] uppercase font-montserrat">4. Data Subject Rights (GDPR)</h3>
               <p>
-                Users have the right to request access to their verified profile records, demand rectification of inaccurate data, or request permanent deletion of their account credentials via our verified compliance desk or WhatsApp support.
+                Users have the right to request access to their profile records, demand rectification of inaccurate data, or request permanent deletion of their account credentials via our compliance desk or WhatsApp support.
               </p>
             </div>
           </div>
@@ -1175,12 +1177,12 @@ export default function App() {
             <div className="space-y-4 text-slate-300 leading-relaxed font-sans">
               <h3 className="text-sm font-bold text-[#FFD700] uppercase font-montserrat">1. Agreement to Terms</h3>
               <p>
-                By accessing SIRWISE, browsing the Digital Knowledge Hub, or purchasing digital courses, e-books, templates, SaaS tools, or consulting sessions, you agree to be bound by these Terms of Service under charter RC BN3583778.
+                By accessing SIRWISE, browsing the Digital Knowledge Hub, or testing digital courses, e-books, templates, SaaS tools, or consulting sessions, you agree to be bound by these Terms of Service under charter RC BN3583778.
               </p>
 
               <h3 className="text-sm font-bold text-[#FFD700] uppercase font-montserrat">2. License Grant</h3>
               <p>
-                Upon verified payment callback from Pi Mainnet KYC Wallet, SIRWISE grants the buyer a revocable, non-exclusive, non-transferable corporate license to download and utilize the selected digital materials.
+                Upon completed Pi Testnet (Sandbox) transaction callback, SIRWISE grants the tester a revocable, non-exclusive, non-transferable license to download and review the selected digital materials.
               </p>
 
               <h3 className="text-sm font-bold text-[#FFD700] uppercase font-montserrat">3. Intellectual Property Rights</h3>
@@ -1188,9 +1190,9 @@ export default function App() {
                 All course curriculums, financial models, valuation spreadsheets, software interfaces, and AI Professor prompts are the proprietary intellectual property of SIRWISE Hub. Resale, redistribution, or unauthorized mirroring without written permission is strictly prohibited.
               </p>
 
-              <h3 className="text-sm font-bold text-[#FFD700] uppercase font-montserrat">4. Refund and Verification Protocol</h3>
+              <h3 className="text-sm font-bold text-[#FFD700] uppercase font-montserrat">4. Testnet Sandbox Notice</h3>
               <p>
-                Because all digital packages and software blueprints are released immediately upon verified gateway callback, access is verified instantly. In the event of duplicate charges, verified refunds are issued within 5-7 business banking days.
+                This application is currently operating in Pi Testnet (Sandbox) mode for Pi Review. Only Test-Pi is used during checkout and no real Pi is charged.
               </p>
             </div>
           </div>
@@ -1344,7 +1346,7 @@ export default function App() {
                 </div>
                 <h3 className="text-base font-bold text-white mb-2 font-montserrat">Downloads Currently Locked</h3>
                 <p className="text-xs text-slate-400 font-sans mb-6 leading-relaxed">
-                  To release offline course kits, spreadsheet valuation packages, and software blueprints, complete payment verification via Pi Mainnet KYC.
+                  To release offline course kits, spreadsheet valuation packages, and software blueprints, complete payment via Pi Testnet (Sandbox) — Test-Pi Only.
                 </p>
                 <button
                   onClick={() => navigateTo('/knowledge-hub')}
@@ -1600,7 +1602,7 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* Step 2: Payment Method (Pi Mainnet Only) */}
+                  {/* Step 2: Payment Method (Pi Testnet Sandbox Only) */}
                   <div className="space-y-3 font-sans">
                     <div className="flex items-center justify-between border-b border-[#FFD700]/20 pb-1.5">
                       <span className="text-[11px] text-[#FFD700] uppercase font-black tracking-wider font-montserrat">
@@ -1613,22 +1615,22 @@ export default function App() {
                       )}
                     </div>
 
-                    {/* Pi Mainnet Live Gateway */}
+                    {/* Pi Testnet (Sandbox) Honest Gateway */}
                     <div className="space-y-2.5">
-                      <span className="text-[10px] text-purple-300 block font-montserrat">
-                        Pi Ecosystem Live Gateway:
-                      </span>
                       <div className="p-3 rounded-xl border border-[#FFD700] bg-[#FFD700]/10 flex items-center justify-between gap-2">
                         <div>
                           <div className="font-bold text-xs text-white flex items-center gap-1.5 font-montserrat">
-                            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                            Pi Mainnet (KYC Wallet)
+                            <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                            Pi Testnet (Sandbox) - Test-Pi Only - No Real Pi Will Be Charged - For Pi Review
                           </div>
-                          <div className="text-[10px] text-slate-300 mt-0.5">
-                            {piAuthUser
-                              ? `Authenticated as @${piAuthUser.username} • Ready to Pay`
-                              : 'Verified Mainnet Pioneer Settlement • Live KYC Enforced'}
+                          <div className="text-[10px] text-amber-300 mt-1 font-semibold">
+                            You are paying with Test-Pi. This is a test.
                           </div>
+                          {piAuthUser && (
+                            <div className="text-[10px] text-emerald-300 mt-0.5">
+                              Signed in as @{piAuthUser.username}
+                            </div>
+                          )}
                         </div>
                         <button
                           type="button"
@@ -1659,21 +1661,10 @@ export default function App() {
 
                   </div>
 
-                  {/* Security Icons & Reassurance */}
-                  <div className="border-t border-[#FFD700]/10 pt-4 space-y-2">
-                    <div className="flex items-center justify-center gap-6 text-slate-400">
-                      <div className="flex items-center gap-1 text-[10px] font-montserrat">
-                        <ShieldCheck className="w-4 h-4 text-[#FFD700]" /> SSL SECURE
-                      </div>
-                      <div className="flex items-center gap-1 text-[10px] font-montserrat">
-                        <ShieldCheck className="w-4 h-4 text-[#FFD700]" /> PCI DSS COMPLIANT
-                      </div>
-                      <div className="flex items-center gap-1 text-[10px] font-montserrat">
-                        <ShieldCheck className="w-4 h-4 text-[#FFD700]" /> VERIFIED GATEWAY
-                      </div>
-                    </div>
-                    <p className="text-[11px] text-center text-slate-400 font-sans">
-                      Your payment is encrypted and processed securely.
+                  {/* Test-Pi Checkout Notice */}
+                  <div className="border-t border-[#FFD700]/10 pt-4">
+                    <p className="text-[11px] text-center text-amber-300 font-sans font-semibold">
+                      You are paying with Test-Pi. This is a test.
                     </p>
                   </div>
 
@@ -1765,9 +1756,8 @@ export default function App() {
             <h5 className="text-xs font-bold text-[#FFD700] uppercase tracking-wider font-montserrat">Compliance Protocol</h5>
             
             <div className="flex flex-wrap gap-1.5">
-              <span className="px-2 py-0.5 rounded bg-zinc-900 text-slate-300 text-[9px] border border-zinc-800">GDPR SECURITY</span>
-              <span className="px-2 py-0.5 rounded bg-zinc-900 text-slate-300 text-[9px] border border-zinc-800">SSL ENCRYPTED</span>
-              <span className="px-2 py-0.5 rounded bg-zinc-900 text-slate-300 text-[9px] border border-zinc-800">PCI DSS</span>
+              <span className="px-2 py-0.5 rounded bg-zinc-900 text-amber-300 text-[9px] border border-amber-500/30">PI TESTNET (SANDBOX)</span>
+              <span className="px-2 py-0.5 rounded bg-zinc-900 text-slate-300 text-[9px] border border-zinc-800">TEST-PI ONLY</span>
             </div>
 
             <ul className="space-y-1.5 text-[11px] text-slate-400 pt-1">
@@ -1794,7 +1784,7 @@ export default function App() {
         {/* Global Compliance Footer Text */}
         <div className="max-w-7xl mx-auto mt-8 pt-6 border-t border-zinc-900 text-center text-[10px] text-slate-500 flex flex-col sm:flex-row items-center justify-between gap-4 font-mono">
           <span>© 2026 SIRWISE Hub. Registered charter license RC BN3583778. All Rights Reserved.</span>
-          <span className="text-[#FFD700]">PCI DSS Verified • GDPR Secure Data Encryption Protocol • SSL Encrypted.</span>
+          <span className="text-[#FFD700]">Pi Testnet (Sandbox) • Test-Pi Only • No Real Pi Will Be Charged.</span>
         </div>
       </footer>
 

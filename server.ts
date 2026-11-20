@@ -195,7 +195,7 @@ app.get('/api/products', (req: Request, res: Response) => {
 
 // ... (keep existing setup)
 
-// Endpoint to verify payment transaction (Pi Mainnet / Testnet)
+// Endpoint to verify payment transaction (Pi Testnet Sandbox)
 app.post('/api/verify-payment', async (req: Request, res: Response) => {
   try {
     const { reference, provider, name, email, phone, country } = req.body;
@@ -210,15 +210,14 @@ app.post('/api/verify-payment', async (req: Request, res: Response) => {
     const userAgent = req.headers['user-agent'] || 'Unknown Device';
     const deviceType = userAgent.includes('Mobile') ? 'Mobile Device' : 'Desktop Device';
 
-    // Verify with Pi Network server-side
+    // Verify with Pi Testnet server-side
     let isVerified = false;
-    if (provider === 'pi' || provider === 'pi_mainnet' || provider === 'pi_testnet') {
-        const isTestnet = provider === 'pi_testnet' || process.env.PI_TESTNET_ENABLED === 'true' || reference.startsWith('TEST-') || reference.startsWith('SANDBOX-') || reference.startsWith('PI-SANDBOX-');
+    if (provider === 'pi' || provider === 'pi_testnet') {
         isVerified = true; 
         
         db.auditLogs.unshift({
             id: `AL-${Date.now()}`,
-            action: `Pi ${isTestnet ? 'Testnet Sandbox (10/10 green 💚)' : 'Mainnet'} Payment verified for tx ${reference}. Metadata recorded.`,
+            action: `Pi Testnet (Sandbox) Test-Pi payment verified for tx ${reference}.`,
             timestamp: timestamp,
             user: email.toLowerCase(),
             severity: 'info'
@@ -411,7 +410,7 @@ app.post('/api/pi/approve', async (req: Request, res: Response) => {
     }
 
     const apiKey = process.env.PI_API_KEY || '';
-    const apiUrl = process.env.NEXT_PUBLIC_PI_API_URL || 'https://api.minepi.com';
+    const apiUrl = process.env.NEXT_PUBLIC_PI_API_URL || 'https://api.testnet.minepi.com';
 
     if (apiKey && !apiKey.includes('placeholder')) {
       const response = await fetch(`${apiUrl}/v2/payments/${paymentId}/approve`, {
@@ -454,7 +453,7 @@ app.post('/api/pi/complete', async (req: Request, res: Response) => {
     }
 
     const apiKey = process.env.PI_API_KEY || '';
-    const apiUrl = process.env.NEXT_PUBLIC_PI_API_URL || 'https://api.minepi.com';
+    const apiUrl = process.env.NEXT_PUBLIC_PI_API_URL || 'https://api.testnet.minepi.com';
 
     if (apiKey && !apiKey.includes('placeholder')) {
       const response = await fetch(`${apiUrl}/v2/payments/${paymentId}/complete`, {
@@ -671,9 +670,8 @@ app.get('/api/config', (req: Request, res: Response) => {
     SYSTEM_MODE: 'VERIFICATION_ONLY',
     PLATFORM: 'SIRWISE Global Digital Hub',
     CHARTER: 'RC BN3583778',
-    PI_TESTNET_ENABLED: process.env.PI_TESTNET_ENABLED !== 'false',
+    PI_TESTNET_ENABLED: true,
     PI_API_KEY_CONFIGURED: !!process.env.PI_API_KEY,
-    PI_MAINNET_KYC_WALLET: process.env.PI_MAINNET_KYC_WALLET || '',
     VALIDATION_KEY: process.env.VALIDATION_KEY || 'f1d2fd990366c6095405cabec435395ab465da166fa9a20d93eb95175cafee6ef988eddcf245344be1f69b19b70712896cd5ce371bf0a8da46ff77f0b5000bc1'
   });
 });
