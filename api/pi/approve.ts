@@ -14,7 +14,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     }
 
     const apiKey = process.env.PI_API_KEY || '';
-    const apiUrl = process.env.NEXT_PUBLIC_PI_API_URL || 'https://api.testnet.minepi.com';
+    const apiUrl = process.env.NEXT_PUBLIC_PI_API_URL || 'https://api.minepi.com';
 
     if (apiKey && !apiKey.includes('placeholder')) {
       const response = await fetch(`${apiUrl}/v2/payments/${paymentId}/approve`, {

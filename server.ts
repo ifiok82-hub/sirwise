@@ -19,7 +19,7 @@ app.use((_req, res, next) => {
   res.removeHeader('X-Frame-Options');
   res.setHeader(
     'Content-Security-Policy',
-    "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://sdk.minepi.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' ws: wss: https://socialchain.app https://api.minepi.com https://api.testnet.minepi.com; frame-src 'self' https://*.minepi.com https://*.pinet.com; frame-ancestors 'self' https://aistudio.google.com https://*.google.com https://*.googleusercontent.com https://*.run.app https://*.pinet.com https://*.minepi.com;"
+    "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://sdk.minepi.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' ws: wss: https://socialchain.app https://api.minepi.com https://api.testnet.minepi.com; frame-src 'self' https://*.minepi.com https://*.pinet.com https://*.pi.app https://*.pioneers.dev https://*.pi-browser.app https://app-studio.minepi.com; frame-ancestors 'self' https://aistudio.google.com https://*.google.com https://*.googleusercontent.com https://*.run.app https://*.minepi.com https://*.pinet.com https://*.pi.app https://*.pioneers.dev https://*.pi-browser.app https://app-studio.minepi.com https://*.vercel.app;"
   );
   next();
 });
@@ -411,7 +411,7 @@ app.post('/api/pi/approve', async (req: Request, res: Response) => {
     }
 
     const apiKey = process.env.PI_API_KEY || '';
-    const apiUrl = process.env.NEXT_PUBLIC_PI_API_URL || 'https://api.testnet.minepi.com';
+    const apiUrl = process.env.NEXT_PUBLIC_PI_API_URL || 'https://api.minepi.com';
 
     if (apiKey && !apiKey.includes('placeholder')) {
       const response = await fetch(`${apiUrl}/v2/payments/${paymentId}/approve`, {
@@ -454,7 +454,7 @@ app.post('/api/pi/complete', async (req: Request, res: Response) => {
     }
 
     const apiKey = process.env.PI_API_KEY || '';
-    const apiUrl = process.env.NEXT_PUBLIC_PI_API_URL || 'https://api.testnet.minepi.com';
+    const apiUrl = process.env.NEXT_PUBLIC_PI_API_URL || 'https://api.minepi.com';
 
     if (apiKey && !apiKey.includes('placeholder')) {
       const response = await fetch(`${apiUrl}/v2/payments/${paymentId}/complete`, {
