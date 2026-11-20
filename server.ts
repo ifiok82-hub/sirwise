@@ -17,9 +17,10 @@ const port = process.env.PORT || 3000;
 app.use(express.json());
 app.use((_req, res, next) => {
   res.removeHeader('X-Frame-Options');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader(
     'Content-Security-Policy',
-    "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://sdk.minepi.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' ws: wss: https://socialchain.app https://api.minepi.com https://api.testnet.minepi.com; frame-src 'self' https://*.minepi.com https://*.pinet.com https://*.pi.app https://*.pioneers.dev https://*.pi-browser.app https://app-studio.minepi.com; frame-ancestors 'self' https://aistudio.google.com https://*.google.com https://*.googleusercontent.com https://*.run.app https://*.minepi.com https://*.pinet.com https://*.pi.app https://*.pioneers.dev https://*.pi-browser.app https://app-studio.minepi.com https://*.vercel.app;"
+    "frame-ancestors 'self' https://aistudio.google.com https://*.google.com https://*.googleusercontent.com https://*.run.app https://*.minepi.com https://*.pinet.com https://*.pi.app https://*.pi-browser.app https://app-studio.minepi.com https://*.vercel.app https://*.pioneers.dev https://*.piappengine.com"
   );
   next();
 });
