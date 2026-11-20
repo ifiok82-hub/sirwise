@@ -1,41 +1,21 @@
 {
-  "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "vite",
-  "installCommand": "npm install --legacy-peer-deps",
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
+  "installCommand": "npm install --legacy-peer-deps",
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/$1" },
+    { "source": "/((?!api/).*)", "destination": "/index.html" }
+  ],
   "headers": [
-    {
-      "source": "/pi-app-validation.txt",
-      "headers": [
-        {
-          "key": "Content-Type",
-          "value": "text/plain; charset=utf-8"
-        },
-        {
-          "key": "Cache-Control",
-          "value": "public, max-age=0, must-revalidate"
-        }
-      ]
-    },
     {
       "source": "/(.*)",
       "headers": [
         {
           "key": "Content-Security-Policy",
-          "value": "frame-ancestors 'self' https://*.minepi.com https://*.pinet.com https://*.pi.app https://*.pi-browser.app https://app-studio.minepi.com https://*.vercel.app https://*.pioneers.dev https://*.piappengine.com"
-        },
-        {
-          "key": "X-Content-Type-Options",
-          "value": "nosniff"
+          "value": "frame-ancestors 'self' https://*.minepi.com https://*.pinet.com https://*.pi.app https://*.pi-browser.app https://app-studio.minepi.com https://*.vercel.app; img-src 'self' data: blob: https:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://sdk.minepi.com https:; connect-src 'self' https://api.minepi.com https://api.testnet.minepi.com https://*.minepi.com https: wss:"
         }
       ]
-    }
-  ],
-  "rewrites": [
-    {
-      "source": "/((?!api/|pi-app-validation\\.txt$|validation-key\\.txt$|sitemap\\.xml$).*)",
-      "destination": "/index.html"
     }
   ]
 }
