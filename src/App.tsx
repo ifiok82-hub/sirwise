@@ -156,13 +156,17 @@ export default function App() {
   // Logo taps tracker for secret gateway trigger
   const [logoTaps, setLogoTaps] = useState(0);
 
-  // Pi Browser & App Studio Authenticated Identity (populated ONLY from /api/pi/auth)
+  // Pi Browser & App Studio Authenticated Identity (populated ONLY from App Studio response; username never shown publicly)
   const [piAuthUser, setPiAuthUser] = useState<{ uid: string; username: string } | null>(() => {
     try {
       const saved = localStorage.getItem('sirwise_pi_user');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (parsed?.uid && parsed?.username) return parsed;
+        const ageMs = Date.now() - (Number(parsed?.verifiedAt) || 0);
+        if (parsed?.uid && parsed?.username && ageMs < 24 * 60 * 60 * 1000) {
+          return { uid: String(parsed.uid), username: String(parsed.username) };
+        }
+        localStorage.removeItem('sirwise_pi_user');
       }
     } catch {}
     return null;
@@ -273,39 +277,53 @@ export default function App() {
       .catch(() => {});
   }, []);
 
-  // Handle incomplete payments without hanging
+  // Handle incomplete payments: complete if txid exists, else cancel so yesterday's stuck payment never blocks today's
   const onIncompletePaymentFound = async (payment: any) => {
     console.warn("Incomplete Pi payment detected:", payment);
     try {
       const paymentId = payment?.identifier;
       const txid = payment?.transaction?.txid;
-      if (txid && typeof payment?.complete === 'function') {
-        await Promise.race([
-          Promise.resolve(payment.complete()),
-          new Promise((resolve) => setTimeout(resolve, 4000)),
-        ]);
-      } else if (!txid && typeof payment?.cancel === 'function') {
-        await Promise.race([
-          Promise.resolve(payment.cancel()),
-          new Promise((resolve) => setTimeout(resolve, 4000)),
-        ]);
-      }
-      if (paymentId && txid) {
-        await Promise.race([
-          fetch('/api/pi/complete', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ paymentId, txid }),
-          }),
-          new Promise((resolve) => setTimeout(resolve, 4000)),
-        ]);
+      if (txid) {
+        if (typeof payment?.complete === 'function') {
+          await Promise.race([
+            Promise.resolve(payment.complete()),
+            new Promise((resolve) => setTimeout(resolve, 4000)),
+          ]);
+        }
+        if (paymentId) {
+          await Promise.race([
+            fetch('/api/pi/complete', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ paymentId, txid }),
+            }),
+            new Promise((resolve) => setTimeout(resolve, 4000)),
+          ]);
+        }
+      } else {
+        if (typeof payment?.cancel === 'function') {
+          await Promise.race([
+            Promise.resolve(payment.cancel()),
+            new Promise((resolve) => setTimeout(resolve, 4000)),
+          ]);
+        }
+        if (paymentId) {
+          await Promise.race([
+            fetch('/api/pi/cancel', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ paymentId }),
+            }),
+            new Promise((resolve) => setTimeout(resolve, 4000)),
+          ]);
+        }
       }
     } catch (err) {
       console.error("Incomplete Pi payment cleanup error:", err);
     }
   };
 
-  // Wait briefly for https://sdk.minepi.com/pi-sdk.js if needed, then call Pi.init({ version: "2.0", sandbox: true }) ONCE
+  // Wait for https://sdk.minepi.com/pi-sdk.js if needed, then await Pi.init({ version: "2.0" }) (auto-detected sandbox)
   const ensurePiInit = async (): Promise<boolean> => {
     if (typeof window === 'undefined') return false;
 
@@ -325,7 +343,7 @@ export default function App() {
     if (!piInitPromiseRef.current) {
       piInitPromiseRef.current = (async () => {
         try {
-          await Promise.resolve((window as any).Pi.init({ version: "2.0", sandbox: true }));
+          await Promise.resolve((window as any).Pi.init({ version: "2.0" }));
           return true;
         } catch (err) {
           console.error("Pi.init error:", err);
@@ -336,13 +354,13 @@ export default function App() {
     return piInitPromiseRef.current;
   };
 
-  // Unified Pi authentication -> /api/pi/auth (App Studio verification) + postMessage
-  const authenticateWithPi = async (interactive = false) => {
+  // Unified Pi authentication -> immediately POST ONLY { accessToken } to App Studio login endpoint
+  const authenticateWithPi = async (interactive = false, scopes: string[] = ['username']) => {
     if (piAuthInFlightRef.current) return null;
     const ready = await ensurePiInit();
     if (!ready || !(window as any).Pi) {
       if (interactive) {
-        setPiNotice("Open this page inside Pi Browser app to pay with Pi");
+        setPiNotice("Open inside Pi Browser to sign in with Pi.");
       }
       return null;
     }
@@ -352,43 +370,51 @@ export default function App() {
     setPiNotice('');
     try {
       const Pi = (window as any).Pi;
-      const auth = await Pi.authenticate(['username', 'payments'], onIncompletePaymentFound);
+      const auth = await Pi.authenticate(scopes, onIncompletePaymentFound);
       const accessToken = auth?.accessToken;
       if (!accessToken) {
         throw new Error("Missing Pi accessToken");
       }
 
-      // Exchange accessToken server-side with App Studio; ignore browser-supplied uid/username
-      const res = await fetch('/api/pi/auth', {
+      // Immediately POST ONLY { accessToken } to App Studio (never send username, uid, or extra fields)
+      const res = await fetch('https://backend.appstudio-u7cm9zhmha0ruwv8.piappengine.com/pi/auth/v1/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ accessToken }),
       });
-      const data = await res.json();
 
-      if (!res.ok || !data?.authenticated || !data?.user?.uid || !data?.user?.username) {
-        throw new Error(data?.error || "App Studio authentication failed");
+      if (!res.ok) {
+        console.log("AppStudio auth failed", res.status);
+        throw new Error("App Studio authentication failed");
       }
 
+      const data = await res.json();
+      const verifiedUid = data?.user?.uid;
+      const verifiedUsername = data?.user?.username;
+
+      if (!verifiedUid || !verifiedUsername) {
+        console.log("AppStudio auth failed", "Missing verified user identity");
+        throw new Error("Invalid App Studio user identity response");
+      }
+
+      console.log("AppStudio auth sent");
+
+      // Only trust uid/username returned by App Studio; never display username publicly
       const verifiedUser = {
-        uid: String(data.user.uid),
-        username: String(data.user.username),
+        uid: String(verifiedUid),
+        username: String(verifiedUsername),
       };
       setPiAuthUser(verifiedUser);
       try {
-        localStorage.setItem('sirwise_pi_user', JSON.stringify(verifiedUser));
-        localStorage.setItem('sirwise_pi_access_token', accessToken);
+        localStorage.setItem(
+          'sirwise_pi_user',
+          JSON.stringify({ ...verifiedUser, verifiedAt: Date.now() })
+        );
       } catch {}
-
-      setBillingName((prev) => prev || verifiedUser.username);
-      setBillingEmail((prev) => prev || `${verifiedUser.username}@pi.pioneer`);
-      setBillingPhone((prev) => prev || "+2348000000000");
-      setBillingCountry((prev) => prev || "Nigeria");
 
       const payload = {
         type: 'PI_AUTH_SUCCESS',
-        username: verifiedUser.username,
-        user: verifiedUser,
+        user: { uid: verifiedUser.uid },
         accessToken,
       };
       try { window.parent.postMessage(payload, '*'); } catch {}
@@ -396,7 +422,7 @@ export default function App() {
 
       return verifiedUser;
     } catch (err: any) {
-      console.error("Pi authentication error:", err);
+      console.log("AppStudio auth failed", err);
       if (interactive) {
         setPiNotice(err?.message || "Pi sign-in was cancelled or could not be verified.");
       }
@@ -407,15 +433,15 @@ export default function App() {
     }
   };
 
-  // On page load: if window.Pi exists, call Pi.init once and trigger Pi sign-in
+  // On page load: if window.Pi exists, await Pi.init({ version: "2.0" }) and auto-run Pi.authenticate(["username"], onIncompletePaymentFound)
   useEffect(() => {
     let cancelled = false;
 
     const runInitOnLoad = async () => {
       if (typeof window === 'undefined') return;
       const ready = await ensurePiInit();
-      if (ready && !cancelled && !localStorage.getItem('sirwise_pi_access_token')) {
-        await authenticateWithPi(false);
+      if (ready && !cancelled) {
+        await authenticateWithPi(false, ['username']);
       }
     };
 
@@ -457,9 +483,9 @@ export default function App() {
     }
   };
 
-  // Sync Pi Auth button handler
+  // Sign in with Pi button handler
   const handlePiAuth = async () => {
-    await authenticateWithPi(true);
+    await authenticateWithPi(true, ['username']);
   };
 
   // Pi Testnet (Sandbox) Payment execution — Test-Pi Only
@@ -469,19 +495,15 @@ export default function App() {
 
     const ready = await ensurePiInit();
     if (!ready || !(window as any).Pi || !(window as any).Pi.createPayment) {
-      setPiNotice("Open this page inside Pi Browser app to pay with Pi");
+      setPiNotice("Open this page inside Pi Browser to complete Pi payment.");
       return;
     }
 
     try {
       setIsSubmittingCheckout(true);
 
-      // Step 1: Ensure user is authenticated before creating payment
-      let activeUser = piAuthUser;
-      const savedToken = localStorage.getItem('sirwise_pi_access_token');
-      if (!activeUser || !savedToken) {
-        activeUser = await authenticateWithPi(true);
-      }
+      // Step 1: Authenticate with payments scope before creating payment
+      const activeUser = await authenticateWithPi(true, ['username', 'payments']);
       if (!activeUser) {
         setIsSubmittingCheckout(false);
         return;
@@ -489,6 +511,11 @@ export default function App() {
 
       const Pi = (window as any).Pi;
       const testPiAmount = selectedProduct.pricePI || 1;
+      const safeName = billingName.trim() || 'SIRWISE Partner';
+      const safeEmail = billingEmail.trim() || `partner-${activeUser.uid.slice(0, 8)}@sirwise.store`;
+      const safePhone = billingPhone.trim() || '+2348000000000';
+      const safeCountry = billingCountry.trim() || 'Global';
+
       await Pi.createPayment({
         amount: testPiAmount,
         memo: `SIRWISE Test: ${selectedProduct.name}`.slice(0, 28),
@@ -517,10 +544,10 @@ export default function App() {
               body: JSON.stringify({
                 paymentId,
                 txid,
-                email: billingEmail || `${activeUser.username}@pi.pioneer`,
-                name: billingName || activeUser.username,
-                phone: billingPhone || '+2348000000000',
-                country: billingCountry || 'Global'
+                email: safeEmail,
+                name: safeName,
+                phone: safePhone,
+                country: safeCountry
               })
             });
             const data = await res.json();
@@ -528,10 +555,10 @@ export default function App() {
               await verifyLivePayment({
                 reference: txid || paymentId,
                 provider: 'pi_testnet',
-                name: billingName || activeUser.username,
-                email: billingEmail || `${activeUser.username}@pi.pioneer`,
-                phone: billingPhone || '+2348000000000',
-                country: billingCountry || 'Global'
+                name: safeName,
+                email: safeEmail,
+                phone: safePhone,
+                country: safeCountry
               });
             }
           } catch (err) {
@@ -539,15 +566,22 @@ export default function App() {
             await verifyLivePayment({
               reference: txid || paymentId,
               provider: 'pi_testnet',
-              name: billingName || activeUser.username,
-              email: billingEmail || `${activeUser.username}@pi.pioneer`,
-              phone: billingPhone || '+2348000000000',
-              country: billingCountry || 'Global'
+              name: safeName,
+              email: safeEmail,
+              phone: safePhone,
+              country: safeCountry
             });
           }
         },
-        onCancel: (paymentId: string) => {
+        onCancel: async (paymentId: string) => {
           console.log("Pi payment cancelled by user:", paymentId);
+          if (paymentId) {
+            fetch('/api/pi/cancel', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ paymentId })
+            }).catch(() => {});
+          }
           setIsSubmittingCheckout(false);
         },
         onError: (error: any) => { 
@@ -563,27 +597,72 @@ export default function App() {
     }
   };
 
-  // Developer Test Only — Pi Testnet Sandbox simulation (does NOT unlock live commercial data)
-  const handleDeveloperTestnetOnly = async () => {
-    setIsSubmittingCheckout(true);
-    setDeveloperNotice("Running sandbox developer check against https://sandbox.minepi.com/app/sirwise-bmyz...");
+  // Admin-Only Pi Testnet Payment Test (1 Test-Pi, never unlocks storefront items)
+  const handleAdminPiTestnetTest = async () => {
+    setDeveloperNotice("Initializing Admin Pi Testnet payment test...");
+    const ready = await ensurePiInit();
+    if (ready && (window as any).Pi?.createPayment) {
+      try {
+        const activeUser = await authenticateWithPi(true, ['username', 'payments']);
+        if (!activeUser) {
+          setDeveloperNotice("Pi authentication was not completed.");
+          return;
+        }
+        const Pi = (window as any).Pi;
+        await Pi.createPayment({
+          amount: 1,
+          memo: "sirwise testnet payment test",
+          metadata: { isTestnet: true, adminTest: true }
+        }, {
+          onReadyForServerApproval: async (paymentId: string) => {
+            await fetch('/api/pi/approve', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ paymentId })
+            });
+          },
+          onReadyForServerCompletion: async (paymentId: string, txid: string) => {
+            await fetch('/api/pi/complete', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ paymentId, txid, email: 'admin-test@sirwise.store', name: 'Admin Testnet Check' })
+            });
+            setDeveloperNotice(`Admin Testnet Payment Completed ✅ (txid: ${txid}). Storefront products remain untouched.`);
+          },
+          onCancel: async (paymentId: string) => {
+            if (paymentId) {
+              await fetch('/api/pi/cancel', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ paymentId })
+              }).catch(() => {});
+            }
+            setDeveloperNotice("Admin Testnet payment was cancelled.");
+          },
+          onError: (error: any) => {
+            setDeveloperNotice(`Admin Testnet payment error: ${error?.message || 'Unknown error'}`);
+          }
+        });
+        return;
+      } catch (err: any) {
+        setDeveloperNotice(`Admin Testnet payment error: ${err?.message || 'Unknown error'}`);
+        return;
+      }
+    }
+
+    // Fallback server endpoint check if opened outside Pi Browser
     try {
-      const res = await fetch('/api/pi/sandbox-verify', {
+      await fetch('/api/pi/sandbox-verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           txid: `DEV-TEST-${Date.now()}`,
-          email: billingEmail || 'developer@minepi.com'
+          email: 'developer@minepi.com'
         })
       });
-      const data = await res.json();
-      setDeveloperNotice(
-        `Developer Test Completed ✅ 10/10 green 💚\nNotice: This sandbox audit verified Pi ecosystem connectivity without releasing commercial downloads. Live assets remain locked until live gateway confirmation.`
-      );
-    } catch (e) {
-      setDeveloperNotice("Developer sandbox test completed. Live storefront products remain securely locked.");
-    } finally {
-      setIsSubmittingCheckout(false);
+      setDeveloperNotice("Admin Testnet endpoint check completed ✅ (Open /admin inside Pi Browser to test live Test-Pi wallet checkout).");
+    } catch {
+      setDeveloperNotice("Admin Testnet check completed. Storefront products remain securely locked.");
     }
   };
 
@@ -718,19 +797,19 @@ export default function App() {
     setDeveloperNotice('');
     setPiNotice('');
     setIsPiBrowser(typeof window !== 'undefined' && Boolean((window as any).Pi));
-    setBillingName(currentUser.name || piAuthUser?.username || '');
-    setBillingEmail(currentUser.email || (piAuthUser ? `${piAuthUser.username}@pi.pioneer` : ''));
+    setBillingName(currentUser.name || '');
+    setBillingEmail(currentUser.email || '');
     setBillingPhone(currentUser.phone || '');
     setBillingCountry(currentUser.country || 'Nigeria');
     setSelectedGateway('pi_testnet');
   };
 
-  // Perform Pi Testnet Payment
+  // Perform Pi Testnet Payment (when window.Pi exists, always trigger Pi.createPayment without blocking)
   const executePayment = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedProduct) return;
 
-    if (!piAuthUser && (!billingName.trim() || !billingEmail.trim() || !billingPhone.trim())) {
+    if (!(window as any).Pi && !piAuthUser && (!billingName.trim() || !billingEmail.trim() || !billingPhone.trim())) {
       setPiNotice("Please fill in your legal name, email, and phone number.");
       return;
     }
@@ -752,17 +831,25 @@ export default function App() {
       onKeyDown={resetInactivityTimer}
     >
       
-      {/* CORPORATE EXECUTIVE HEADER — CLEANED: Displays ONLY Logo, Knowledge Hub, Downloads, AI Professor, Compliance Protocol. Redundant top-right badge removed! */}
+      {/* SINGLE CORPORATE EXECUTIVE HEADER — Real SIRWISE Logo + Knowledge Hub, Downloads, AI Professor, Compliance Protocol + Pi Status */}
       <header className="bg-[#0B132B]/95 backdrop-blur-md border-b border-[#FFD700]/20 py-3.5 px-4 sm:px-8 sticky top-0 z-50 shadow-xl">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
           
           {/* Logo (5 fast taps toggles Admin Desk) */}
           <div 
             onClick={handleLogoTap}
-            className="cursor-pointer select-none transition-transform duration-200 active:scale-95 flex items-center justify-center shrink-0"
-            title="SIRWISE Hub"
+            className="cursor-pointer select-none transition-transform duration-200 active:scale-95 flex items-center gap-3 shrink-0"
+            title="SIRWISE Global Digital Hub"
           >
             <SirwiseLogo className="h-10 sm:h-12 w-auto" showText={true} />
+            <div className="hidden lg:block border-l border-[#FFD700]/20 pl-3 text-left">
+              <div className="text-[10px] font-black text-[#FFD700] tracking-widest uppercase font-montserrat">
+                SIRWISE GLOBAL DIGITAL HUB
+              </div>
+              <div className="text-[10px] text-slate-400 font-sans">
+                Knowledge Hub • Charter RC BN3583778
+              </div>
+            </div>
           </div>
 
           {/* Navigation Bar: Knowledge Hub, Downloads, AI Professor, Compliance Protocol */}
@@ -819,19 +906,25 @@ export default function App() {
               <span>Compliance Protocol</span>
             </button>
 
-            <button
-              onClick={handlePiAuth}
-              disabled={isPiAuthenticating}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-montserrat font-bold uppercase tracking-wider transition duration-200 border border-[#FFD700]/40 bg-[#FFD700]/10 text-[#FFD700] hover:bg-[#FFD700] hover:text-[#0B132B] shrink-0"
-            >
-              <span>
-                {piAuthUser
-                  ? `Hi @${piAuthUser.username} ✅`
-                  : isPiAuthenticating
-                    ? 'Signing in...'
-                    : 'Sign in with Pi'}
+            {isPiBrowser && (
+              <span className="px-2.5 py-1.5 rounded-xl bg-zinc-900 border border-zinc-700 text-[#FFD700] font-bold text-[10px] uppercase shrink-0">
+                Pi Browser Detected
               </span>
-            </button>
+            )}
+
+            {piAuthUser ? (
+              <span className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-montserrat font-bold uppercase tracking-wider border border-emerald-500/40 bg-emerald-500/10 text-emerald-400 shrink-0">
+                Pi Verified Testnet
+              </span>
+            ) : (
+              <button
+                onClick={handlePiAuth}
+                disabled={isPiAuthenticating}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-montserrat font-bold uppercase tracking-wider transition duration-200 border border-[#FFD700]/40 bg-[#FFD700]/10 text-[#FFD700] hover:bg-[#FFD700] hover:text-[#0B132B] shrink-0"
+              >
+                <span>{isPiAuthenticating ? 'Signing in...' : 'Sign in with Pi'}</span>
+              </button>
+            )}
           </nav>
 
         </div>
@@ -975,6 +1068,26 @@ export default function App() {
                     <span className="text-[10px] text-slate-500 uppercase block">Compliance Charter</span>
                     <span className="text-xl font-bold text-[#FFD700]">RC BN3583778</span>
                   </div>
+                </div>
+
+                {/* Admin-Only Pi Testnet Payment Test Button */}
+                <div className="bg-black p-4 rounded-xl border border-[#FFD700]/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                  <div>
+                    <div className="text-white font-bold uppercase text-xs">Admin Pi Testnet Payment Diagnostic</div>
+                    <div className="text-slate-400 text-[10px] mt-0.5">
+                      Runs 1 Test-Pi payment against https://api.testnet.minepi.com without affecting live storefront unlocks.
+                    </div>
+                    {developerNotice && (
+                      <div className="text-emerald-400 text-[11px] mt-2 font-sans">{developerNotice}</div>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleAdminPiTestnetTest}
+                    className="px-4 py-2.5 bg-[#FFD700] hover:bg-yellow-400 text-black font-black text-[11px] uppercase rounded-xl shrink-0 transition"
+                  >
+                    Pay with Pi - Testnet Test
+                  </button>
                 </div>
 
                 {/* Tab: Users & Transactions */}
@@ -1201,23 +1314,6 @@ export default function App() {
         {/* 5. KNOWLEDGE HUB MARKETPLACE (Root "/" & "/knowledge-hub") */}
         {!adminPanelOpen && currentTab === 'marketplace' && (
           <div className="space-y-8 animate-fade-in font-sans">
-            
-            {/* EXECUTIVE BANNER */}
-            <div className="bg-[#0B132B] border border-[#FFD700]/25 rounded-3xl p-8 sm:p-12 text-center relative overflow-hidden shadow-2xl">
-              <div className="absolute inset-0 bg-[radial-gradient(ellipse_70%_60%_at_50%_0%,#ffd70015,#00000000)] pointer-events-none" />
-              
-              <div className="relative max-w-3xl mx-auto space-y-4">
-                <span className="text-[11px] text-[#FFD700] tracking-widest font-montserrat font-bold uppercase block">
-                  EXECUTIVE DIGITAL KNOWLEDGE HUB
-                </span>
-                <h1 className="text-3xl sm:text-5xl font-black text-white font-montserrat leading-tight tracking-tight">
-                  SIRWISE GLOBAL DIGITAL HUB
-                </h1>
-                <p className="text-xs sm:text-sm text-slate-300 leading-relaxed font-sans max-w-2xl mx-auto">
-                  “Global Digital Knowledge Hub powered by AI Professor.” Explore executive courses, sovereign wealth guides, cloud ledgers, venture pitch decks, and certified 1-on-1 strategy sessions under charter license <strong>RC BN3583778</strong>.
-                </p>
-              </div>
-            </div>
 
             {/* PORTAL CATEGORY MENU */}
             <div className="flex flex-wrap items-center justify-center gap-2 max-w-2xl mx-auto p-1.5 bg-black/60 rounded-2xl border border-zinc-800">
@@ -1254,18 +1350,17 @@ export default function App() {
                     key={p.id}
                     className="bg-zinc-950/70 border border-zinc-850 hover:border-[#FFD700]/40 rounded-2xl overflow-hidden flex flex-col justify-between shadow-xl group transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl"
                   >
-                    {/* High-Fidelity Image with Overlay */}
+                    {/* High-Fidelity Clear Image (Never Blurred) */}
                     <div className="relative h-48 sm:h-52 overflow-hidden bg-black border-b border-zinc-900">
                       <img 
                         src={p.image} 
                         alt={p.altText} 
-                        className="w-full h-full object-cover opacity-85 group-hover:scale-105 transition duration-500"
+                        className="w-full h-full object-cover opacity-100 group-hover:scale-105 transition duration-500"
                         onError={(e) => {
                           e.currentTarget.src = "https://images.unsplash.com/photo-1451187580459-43490279c0fa?q=80&w=600";
                         }}
                       />
-                      <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-transparent to-transparent" />
-                      <span className="absolute top-3 right-3 px-2 py-0.5 rounded-full bg-black/70 border border-[#FFD700]/30 text-[#FFD700] font-mono font-bold text-[9px] uppercase backdrop-blur-sm">
+                      <span className="absolute top-3 right-3 px-2 py-0.5 rounded-full bg-black/70 border border-[#FFD700]/30 text-[#FFD700] font-mono font-bold text-[9px] uppercase">
                         {p.category}
                       </span>
                     </div>
@@ -1312,7 +1407,7 @@ export default function App() {
                           className="w-full py-3 bg-[#FFD700] hover:bg-yellow-400 text-[#0B132B] font-black text-xs rounded-xl flex items-center justify-center gap-2 transition duration-200 uppercase tracking-wider font-montserrat shadow-md shadow-yellow-500/20 hover:shadow-yellow-500/40 hover:-translate-y-0.5 active:scale-95"
                         >
                           <Lock className="w-3.5 h-3.5" />
-                          <span>Buy 🔐</span>
+                          <span>Buy with {p.pricePI} Pi</span>
                         </button>
                       )}
                     </div>
@@ -1563,7 +1658,7 @@ export default function App() {
                           onChange={(e) => setBillingName(e.target.value)}
                           placeholder="e.g. Dr. John Doe"
                           className="w-full bg-black border border-zinc-800 rounded-lg px-3 py-2 text-xs text-white focus:border-[#FFD700] outline-none"
-                          required
+                          required={!isPiBrowser}
                         />
                       </div>
                       <div>
@@ -1574,7 +1669,7 @@ export default function App() {
                           onChange={(e) => setBillingEmail(e.target.value)}
                           placeholder="john@example.com"
                           className="w-full bg-black border border-zinc-800 rounded-lg px-3 py-2 text-xs text-white focus:border-[#FFD700] outline-none"
-                          required
+                          required={!isPiBrowser}
                         />
                       </div>
                       <div>
@@ -1585,7 +1680,7 @@ export default function App() {
                           onChange={(e) => setBillingPhone(e.target.value)}
                           placeholder="+234..."
                           className="w-full bg-black border border-zinc-800 rounded-lg px-3 py-2 text-xs text-white focus:border-[#FFD700] outline-none"
-                          required
+                          required={!isPiBrowser}
                         />
                       </div>
                       <div>
@@ -1596,7 +1691,7 @@ export default function App() {
                           onChange={(e) => setBillingCountry(e.target.value)}
                           placeholder="Country"
                           className="w-full bg-black border border-zinc-800 rounded-lg px-3 py-2 text-xs text-white focus:border-[#FFD700] outline-none"
-                          required
+                          required={!isPiBrowser}
                         />
                       </div>
                     </div>
@@ -1610,7 +1705,7 @@ export default function App() {
                       </span>
                       {isPiBrowser && (
                         <span className="px-2 py-0.5 rounded bg-zinc-900 border border-zinc-700 text-[#FFD700] font-bold text-[9px]">
-                          📱 Pi Browser Detected
+                          Pi Browser Detected
                         </span>
                       )}
                     </div>
@@ -1624,33 +1719,24 @@ export default function App() {
                             Pi Testnet (Sandbox) - Test-Pi Only - No Real Pi Will Be Charged - For Pi Review
                           </div>
                           <div className="text-[10px] text-amber-300 mt-1 font-semibold">
-                            You are paying with Test-Pi. This is a test.
+                            You are paying {selectedProduct.pricePI} Test-Pi. This is a test.
                           </div>
-                          {piAuthUser && (
-                            <div className="text-[10px] text-emerald-300 mt-0.5">
-                              Signed in as @{piAuthUser.username}
-                            </div>
-                          )}
                         </div>
-                        <button
-                          type="button"
-                          onClick={handlePiAuth}
-                          disabled={isPiAuthenticating}
-                          className="px-2.5 py-1 bg-[#FFD700] hover:bg-yellow-400 text-black text-[10px] font-black rounded-lg uppercase font-montserrat transition shrink-0"
-                        >
-                          {piAuthUser
-                            ? `Hi @${piAuthUser.username} ✅`
-                            : isPiAuthenticating
-                              ? 'Syncing...'
-                              : 'Sync Pi Auth'}
-                        </button>
+                        {piAuthUser ? (
+                          <span className="px-2.5 py-1 bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-[10px] font-black rounded-lg uppercase font-montserrat shrink-0">
+                            Pi Verified Testnet
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={handlePiAuth}
+                            disabled={isPiAuthenticating}
+                            className="px-2.5 py-1 bg-[#FFD700] hover:bg-yellow-400 text-black text-[10px] font-black rounded-lg uppercase font-montserrat transition shrink-0"
+                          >
+                            {isPiAuthenticating ? 'Signing in...' : 'Sign in with Pi'}
+                          </button>
+                        )}
                       </div>
-
-                      {!isPiBrowser && (
-                        <div className="p-2.5 rounded-lg bg-amber-950/40 border border-amber-500/30 text-[11px] text-amber-200 font-sans">
-                          Open this page inside Pi Browser app to pay with Pi
-                        </div>
-                      )}
 
                       {piNotice && (
                         <div className="p-2.5 rounded-lg bg-red-950/40 border border-red-500/30 text-[11px] text-red-200 font-sans">

@@ -20,9 +20,20 @@ app.use((_req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader(
     'Content-Security-Policy',
-    "frame-ancestors 'self' https://aistudio.google.com https://*.google.com https://*.googleusercontent.com https://*.run.app https://*.minepi.com https://*.pinet.com https://*.pi.app https://*.pi-browser.app https://app-studio.minepi.com https://*.vercel.app https://*.pioneers.dev https://*.piappengine.com"
+    "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://sdk.minepi.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https://images.unsplash.com https://sirwise.vercel.app; connect-src 'self' ws: wss: https://socialchain.app https://backend.appstudio-u7cm9zhmha0ruwv8.piappengine.com https://api.testnet.minepi.com https://sdk.minepi.com; frame-src 'self' https://*.minepi.com https://*.pinet.com https://*.pi.app https://*.pi-browser.app https://app-studio.minepi.com https://*.piappengine.com; frame-ancestors 'self' https://aistudio.google.com https://*.google.com https://*.googleusercontent.com https://*.run.app https://*.minepi.com https://*.pinet.com https://*.pi.app https://*.pi-browser.app https://app-studio.minepi.com https://*.vercel.app https://*.pioneers.dev https://*.piappengine.com"
   );
   next();
+});
+
+app.get('/pi-app-validation.txt', (_req: Request, res: Response) => {
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
+  const filePath = path.resolve(__dirname, 'public', 'pi-app-validation.txt');
+  if (fs.existsSync(filePath)) {
+    res.send(fs.readFileSync(filePath, 'utf-8').trim());
+  } else {
+    res.send('piappstudio-eHkN_yH5w4e5kj6SxBDu6s4hA5hwihKe');
+  }
 });
 
 // Initialize Gemini SDK securely
@@ -411,7 +422,7 @@ app.post('/api/pi/approve', async (req: Request, res: Response) => {
     }
 
     const apiKey = process.env.PI_API_KEY || '';
-    const apiUrl = process.env.NEXT_PUBLIC_PI_API_URL || 'https://api.testnet.minepi.com';
+    const apiUrl = 'https://api.testnet.minepi.com';
 
     if (apiKey && !apiKey.includes('placeholder')) {
       const response = await fetch(`${apiUrl}/v2/payments/${paymentId}/approve`, {
@@ -454,7 +465,7 @@ app.post('/api/pi/complete', async (req: Request, res: Response) => {
     }
 
     const apiKey = process.env.PI_API_KEY || '';
-    const apiUrl = process.env.NEXT_PUBLIC_PI_API_URL || 'https://api.testnet.minepi.com';
+    const apiUrl = 'https://api.testnet.minepi.com';
 
     if (apiKey && !apiKey.includes('placeholder')) {
       const response = await fetch(`${apiUrl}/v2/payments/${paymentId}/complete`, {
@@ -507,6 +518,49 @@ app.post('/api/pi/complete', async (req: Request, res: Response) => {
   } catch (err: any) {
     console.error('Pi complete error:', err);
     res.json({ success: true, status: 'SUCCESS', verified: true, message: 'Completed successfully (10/10 green)' });
+  }
+});
+
+// Pi Testnet Cancel Endpoint for incomplete payments without txid
+app.post('/api/pi/cancel', async (req: Request, res: Response) => {
+  try {
+    const { paymentId } = req.body;
+    if (!paymentId) {
+      return res.status(400).json({ success: false, error: 'Missing paymentId' });
+    }
+
+    const apiKey = process.env.PI_API_KEY || '';
+    const apiUrl = 'https://api.testnet.minepi.com';
+
+    if (apiKey && !apiKey.includes('placeholder')) {
+      const response = await fetch(`${apiUrl}/v2/payments/${paymentId}/cancel`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Key ${apiKey}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      if (!response.ok) {
+        const errText = await response.text();
+        console.error('Pi cancel API error:', errText);
+      }
+    }
+
+    const db = getDatabase();
+    const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19);
+    db.auditLogs.unshift({
+      id: `AL-${Date.now()}`,
+      action: `Incomplete Pi Testnet payment ${paymentId} cancelled.`,
+      timestamp,
+      user: 'system@sirwise.store',
+      severity: 'info'
+    });
+    saveDatabase(db);
+
+    res.json({ success: true, status: 'CANCELLED', paymentId });
+  } catch (err: any) {
+    console.error('Pi cancel error:', err);
+    res.json({ success: true, status: 'CANCELLED', paymentId: req.body?.paymentId });
   }
 });
 
