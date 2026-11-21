@@ -124,6 +124,17 @@ export function saveDatabase(db: DatabaseSchema): void {
   }
 }
 
+const AUTHORITATIVE_PRODUCTS_FALLBACK = [
+  { id: 'prod-course-mba', sku: 'SKU-SIR-MBA-ACC', name: 'MBA Digital Acceleration Program', category: 'courses', priceUSD: 99, pricePI: 10, downloadUrl: '/downloads/sirwise-mba-program-kit.zip' },
+  { id: 'prod-ebook-sovereign', sku: 'SKU-SIR-SOV-WEALTH', name: 'Sovereign Wealth Guide', category: 'ebooks', priceUSD: 49, pricePI: 5, downloadUrl: '/downloads/sirwise-sovereign-wealth-guide.pdf' },
+  { id: 'prod-temp-pitch', sku: 'SKU-SIR-PITCH-DECK', name: 'Venture Pitch Deck Master Template', category: 'templates', priceUSD: 59, pricePI: 6, downloadUrl: '/downloads/sirwise-venture-pitch-deck.zip' },
+  { id: 'prod-saas-ledger', sku: 'SKU-SIR-LEDGER-ACC', name: 'LedgerWise Cloud Accounting Software', category: 'saas', priceUSD: 79, pricePI: 8, downloadUrl: '/downloads/sirwise-ledgerwise-software.zip' },
+  { id: 'prod-asset-media', sku: 'SKU-SIR-MEDIA-VAULT', name: 'Creative Media Asset Vault', category: 'assets', priceUSD: 69, pricePI: 7, downloadUrl: '/downloads/sirwise-creative-media-vault.zip' },
+  { id: 'prod-consult-mentorship', sku: 'SKU-SIR-CONSULT-MENT', name: 'Elite Consulting & Mentorship Session', category: 'consulting', priceUSD: 199, pricePI: 20, downloadUrl: '/downloads/sirwise-consulting-booking.pdf' },
+  { id: 'prod-temp-calc', sku: 'SKU-SIR-VAL-CALC', name: 'Professional Valuation Calculators Package', category: 'templates', priceUSD: 49, pricePI: 5, downloadUrl: '/downloads/sirwise-valuation-calculators.zip' },
+  { id: 'prod-course-ai', sku: 'SKU-SIR-AI-PROF', name: 'AI Professor Masterclass & Toolkit', category: 'saas', priceUSD: 89, pricePI: 9, downloadUrl: '/downloads/sirwise-ai-professor-blueprint.zip' },
+];
+
 export function getProductsList(): Array<{
   id: string;
   sku: string;
@@ -134,12 +145,20 @@ export function getProductsList(): Array<{
   downloadUrl: string;
 }> {
   try {
-    const productsFile = path.resolve(process.cwd(), 'data', 'products.json');
-    if (fs.existsSync(productsFile)) {
-      return JSON.parse(fs.readFileSync(productsFile, 'utf-8'));
+    const candidates = [
+      path.resolve(process.cwd(), 'data', 'products.json'),
+      path.resolve('/var/task', 'data', 'products.json'),
+    ];
+    for (const productsFile of candidates) {
+      if (fs.existsSync(productsFile)) {
+        const parsed = JSON.parse(fs.readFileSync(productsFile, 'utf-8'));
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      }
     }
   } catch (err) {
     console.error('Failed reading products.json:', err);
   }
-  return [];
+  return AUTHORITATIVE_PRODUCTS_FALLBACK;
 }

@@ -3,9 +3,14 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "installCommand": "npm install --legacy-peer-deps",
+  "functions": {
+    "api/**/*.ts": {
+      "includeFiles": "data/**"
+    }
+  },
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/$1" },
-    { "source": "/((?!api/|pi-app-validation\\.txt$|validation-key\\.txt$|sitemap\\.xml$).*)", "destination": "/index.html" }
+    { "source": "/((?!api/|pi-app-validation.txt|validation-key.txt|sitemap.xml).*)", "destination": "/index.html" }
   ],
   "headers": [
     {

@@ -376,7 +376,7 @@ export default function App() {
   const authenticateWithPi = async (interactive = false, scopes: string[] = ['username']) => {
     if (piAuthInFlightRef.current) return null;
     const ready = await ensurePiInit(interactive);
-    if (!ready || !(window as any).Pi) {
+    if (!(window as any).Pi || (!interactive && !ready)) {
       if (interactive) {
         setPiNotice("Open inside Pi Browser to sign in with Pi.");
       }
@@ -479,8 +479,8 @@ export default function App() {
     if (!selectedProduct) return;
     setPiNotice('');
 
-    const ready = await ensurePiInit(true);
-    if (!ready || !(window as any).Pi || !(window as any).Pi.createPayment) {
+    await ensurePiInit(true);
+    if (!(window as any).Pi || !(window as any).Pi.createPayment) {
       setPiNotice("Open this page inside Pi Browser to complete Pi payment.");
       return;
     }
@@ -512,6 +512,7 @@ export default function App() {
         },
       }, {
         onReadyForServerApproval: async (paymentId: string) => {
+          console.log("Approve called", paymentId);
           const res = await fetch('/api/pi/approve', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -524,10 +525,12 @@ export default function App() {
           const data = await res.json().catch(() => ({}));
           if (!res.ok || !data?.success) {
             const msg = data?.error || 'Server payment approval rejected.';
+            console.error("Approve failed", paymentId, msg);
             setPiNotice(msg);
             setIsSubmittingCheckout(false);
             throw new Error(msg);
           }
+          console.log("Approve success", paymentId);
         },
         onReadyForServerCompletion: async (paymentId: string, txid: string) => {
           try {
@@ -595,8 +598,8 @@ export default function App() {
   // Admin-Only Pi Testnet Payment Test (1 Test-Pi, never unlocks storefront items)
   const handleAdminPiTestnetTest = async () => {
     setDeveloperNotice("Initializing Admin Pi Testnet payment test...");
-    const ready = await ensurePiInit(true);
-    if (ready && (window as any).Pi?.createPayment) {
+    await ensurePiInit(true);
+    if ((window as any).Pi?.createPayment) {
       try {
         const activeUser = await authenticateWithPi(true, ['username', 'payments']);
         if (!activeUser) {
@@ -610,6 +613,7 @@ export default function App() {
           metadata: { isTestnet: true, adminTest: true }
         }, {
           onReadyForServerApproval: async (paymentId: string) => {
+            console.log("Approve called", paymentId);
             const res = await fetch('/api/pi/approve', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -621,8 +625,11 @@ export default function App() {
             });
             const data = await res.json().catch(() => ({}));
             if (!res.ok || !data?.success) {
-              throw new Error(data?.error || 'Admin diagnostic approval failed');
+              const msg = data?.error || 'Admin diagnostic approval failed';
+              console.error("Approve failed", paymentId, msg);
+              throw new Error(msg);
             }
+            console.log("Approve success", paymentId);
           },
           onReadyForServerCompletion: async (paymentId: string, txid: string) => {
             const res = await fetch('/api/pi/complete', {

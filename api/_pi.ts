@@ -46,7 +46,14 @@ export interface PiActionResult {
 
 function resolveApiKey(deps?: PiServiceDeps): string {
   if (deps && typeof deps.apiKey === 'string') return deps.apiKey;
-  return (process.env.PI_NETWORK_API_KEY || process.env.PI_API_KEY || '').trim();
+  const candidates = [process.env.PI_API_KEY, process.env.PI_NETWORK_API_KEY];
+  for (const raw of candidates) {
+    const trimmed = String(raw || '').trim();
+    if (trimmed && !isPlaceholderKey(trimmed)) {
+      return trimmed;
+    }
+  }
+  return '';
 }
 
 function isPlaceholderKey(apiKey: string): boolean {
@@ -58,17 +65,45 @@ function nowTimestamp(): string {
   return new Date().toISOString().replace('T', ' ').substring(0, 19);
 }
 
+async function fetchWithTimeout(
+  fetchImpl: typeof fetch,
+  url: string,
+  init: RequestInit,
+  timeoutMs = 4200
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetchImpl(url, { ...init, signal: init.signal || controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function fetchPiPayment(
   paymentId: string,
   apiKey: string,
   fetchImpl: typeof fetch
 ): Promise<{ ok: true; payment: PiPlatformPayment } | { ok: false; httpStatus: number; error: string }> {
-  const res = await fetchImpl(`${PI_PLATFORM_API_BASE}/v2/payments/${encodeURIComponent(paymentId)}`, {
-    method: 'GET',
-    headers: {
-      Authorization: `Key ${apiKey}`,
-    },
-  });
+  let res: Response;
+  try {
+    res = await fetchWithTimeout(
+      fetchImpl,
+      `${PI_PLATFORM_API_BASE}/v2/payments/${encodeURIComponent(paymentId)}`,
+      {
+        method: 'GET',
+        headers: {
+          Authorization: `Key ${apiKey}`,
+        },
+      }
+    );
+  } catch (err: any) {
+    return {
+      ok: false,
+      httpStatus: 504,
+      error: `Pi Platform payment lookup timed out or failed: ${err?.message || 'network error'}`,
+    };
+  }
 
   if (!res.ok) {
     const errText = await res.text().catch(() => '');
@@ -154,15 +189,18 @@ export async function approvePiPayment(
   deps?: PiServiceDeps
 ): Promise<PiActionResult> {
   const paymentId = String(input.paymentId || '').trim();
+  console.log('Approve called', paymentId || '(missing paymentId)');
   if (!paymentId) {
+    console.error('Approve failed', 'Missing paymentId');
     return { httpStatus: 400, body: { success: false, error: 'Missing paymentId' } };
   }
 
   const apiKey = resolveApiKey(deps);
   if (isPlaceholderKey(apiKey)) {
+    console.error('Approve failed', 'Server PI_API_KEY / PI_NETWORK_API_KEY is not configured');
     return {
       httpStatus: 500,
-      body: { success: false, error: 'Server PI_NETWORK_API_KEY is not configured' },
+      body: { success: false, error: 'Server PI_API_KEY / PI_NETWORK_API_KEY is not configured' },
     };
   }
 
@@ -173,20 +211,24 @@ export async function approvePiPayment(
 
   const lookup = await fetchPiPayment(paymentId, apiKey, fetchImpl);
   if (!lookup.ok) {
+    console.error('Approve failed', paymentId, lookup.error);
     return { httpStatus: lookup.httpStatus, body: { success: false, error: lookup.error } };
   }
   const payment = lookup.payment;
 
   if (payment.status?.cancelled || payment.status?.user_cancelled) {
+    console.error('Approve failed', paymentId, 'Payment has been cancelled');
     return { httpStatus: 400, body: { success: false, error: 'Payment has been cancelled' } };
   }
 
   if (input.expectedUserUid && payment.user_uid !== input.expectedUserUid) {
+    console.error('Approve failed', paymentId, 'user_uid mismatch');
     return { httpStatus: 403, body: { success: false, error: 'Payment user_uid does not match authenticated user' } };
   }
 
   const validation = validatePaymentAgainstCatalog(payment, getProducts(), input.productIdHint);
   if (!validation.ok) {
+    console.error('Approve failed', paymentId, validation.error);
     return { httpStatus: validation.httpStatus, body: { success: false, error: validation.error } };
   }
 
@@ -195,6 +237,7 @@ export async function approvePiPayment(
   let record = db.piPayments.find((r) => r.paymentId === paymentId);
 
   if (record && (record.status === 'approved' || record.status === 'completed')) {
+    console.log('Approve success', paymentId, '(idempotent)');
     return {
       httpStatus: 200,
       body: {
@@ -227,24 +270,34 @@ export async function approvePiPayment(
   }
 
   if (!payment.status?.developer_approved) {
-    const approveRes = await fetchImpl(
-      `${PI_PLATFORM_API_BASE}/v2/payments/${encodeURIComponent(paymentId)}/approve`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Key ${apiKey}`,
-          'Content-Type': 'application/json',
-        },
-      }
-    );
+    let approveRes: Response;
+    try {
+      approveRes = await fetchWithTimeout(
+        fetchImpl,
+        `${PI_PLATFORM_API_BASE}/v2/payments/${encodeURIComponent(paymentId)}/approve`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Key ${apiKey}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+    } catch (err: any) {
+      const msg = `Pi approve timed out or failed: ${err?.message || 'network error'}`;
+      console.error('Approve failed', paymentId, msg);
+      return { httpStatus: 504, body: { success: false, error: msg } };
+    }
 
     if (!approveRes.ok) {
       const errText = await approveRes.text().catch(() => '');
+      const msg = `Pi approve failed (${approveRes.status})${errText ? `: ${errText.slice(0, 160)}` : ''}`;
+      console.error('Approve failed', paymentId, msg);
       return {
         httpStatus: 502,
         body: {
           success: false,
-          error: `Pi approve failed (${approveRes.status})${errText ? `: ${errText.slice(0, 160)}` : ''}`,
+          error: msg,
         },
       };
     }
@@ -260,6 +313,7 @@ export async function approvePiPayment(
     severity: 'info',
   });
   saveDb(db);
+  console.log('Approve success', paymentId);
 
   return {
     httpStatus: 200,
@@ -393,17 +447,29 @@ export async function completePiPayment(
   saveDb(db);
 
   if (!payment.status?.developer_completed) {
-    const completeRes = await fetchImpl(
-      `${PI_PLATFORM_API_BASE}/v2/payments/${encodeURIComponent(paymentId)}/complete`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Key ${apiKey}`,
-          'Content-Type': 'application/json',
+    let completeRes: Response;
+    try {
+      completeRes = await fetchWithTimeout(
+        fetchImpl,
+        `${PI_PLATFORM_API_BASE}/v2/payments/${encodeURIComponent(paymentId)}/complete`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Key ${apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ txid }),
+        }
+      );
+    } catch (err: any) {
+      return {
+        httpStatus: 504,
+        body: {
+          success: false,
+          error: `Pi complete timed out or failed: ${err?.message || 'network error'}`,
         },
-        body: JSON.stringify({ txid }),
-      }
-    );
+      };
+    }
 
     if (!completeRes.ok) {
       const errText = await completeRes.text().catch(() => '');
@@ -518,16 +584,28 @@ export async function cancelPiPayment(
   }
 
   if (!payment.status?.cancelled && !payment.status?.user_cancelled) {
-    const cancelRes = await fetchImpl(
-      `${PI_PLATFORM_API_BASE}/v2/payments/${encodeURIComponent(paymentId)}/cancel`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Key ${apiKey}`,
-          'Content-Type': 'application/json',
+    let cancelRes: Response;
+    try {
+      cancelRes = await fetchWithTimeout(
+        fetchImpl,
+        `${PI_PLATFORM_API_BASE}/v2/payments/${encodeURIComponent(paymentId)}/cancel`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Key ${apiKey}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+    } catch (err: any) {
+      return {
+        httpStatus: 504,
+        body: {
+          success: false,
+          error: `Pi cancel timed out or failed: ${err?.message || 'network error'}`,
         },
-      }
-    );
+      };
+    }
     if (!cancelRes.ok) {
       const errText = await cancelRes.text().catch(() => '');
       return {
