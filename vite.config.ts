@@ -71,9 +71,6 @@ export default defineConfig(() => {
     },
     define: {
       'process.env.PI_TESTNET_ENABLED': JSON.stringify(process.env.PI_TESTNET_ENABLED ?? 'true'),
-      'process.env.NEXT_PUBLIC_PI_TESTNET_ENABLED': JSON.stringify(process.env.NEXT_PUBLIC_PI_TESTNET_ENABLED ?? process.env.PI_TESTNET_ENABLED ?? 'true'),
-      'process.env.PI_API_KEY': JSON.stringify(process.env.PI_API_KEY ?? ''),
-      'process.env.PI_MAINNET_KYC_WALLET': JSON.stringify(process.env.PI_MAINNET_KYC_WALLET ?? ''),
       'process.env.VALIDATION_KEY': JSON.stringify(process.env.VALIDATION_KEY ?? 'f1d2fd990366c6095405cabec435395ab465da166fa9a20d93eb95175cafee6ef988eddcf245344be1f69b19b70712896cd5ce371bf0a8da46ff77f0b5000bc1')
     },
     resolve: {

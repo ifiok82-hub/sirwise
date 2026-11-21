@@ -5,6 +5,14 @@ import dotenv from 'dotenv';
 import { GoogleGenAI } from '@google/genai';
 import fs from 'fs';
 import crypto from 'crypto';
+import type { DatabaseSchema } from './api/_store';
+import {
+  approvePiPayment,
+  completePiPayment,
+  cancelPiPayment,
+  handleIncompletePiPayment,
+  verifyRecordedPayment,
+} from './api/_pi';
 
 dotenv.config();
 
@@ -51,34 +59,6 @@ const ai = new GoogleGenAI({
 const DB_FILE = path.resolve(__dirname, 'data', 'db.json');
 const PRODUCTS_FILE = path.resolve(__dirname, 'data', 'products.json');
 
-// Database Access Helpers
-interface DatabaseSchema {
-  users: Array<{
-    id: string;
-    name: string;
-    email: string;
-    phone: string;
-    country: string;
-    status: 'Verified' | 'Revoked' | 'Pending';
-    timestamp: string;
-    device: string;
-  }>;
-  auditLogs: Array<{
-    id: string;
-    action: string;
-    timestamp: string;
-    user: string;
-    severity: 'info' | 'warning' | 'critical';
-  }>;
-  downloads: Array<{
-    id: string;
-    productId: string;
-    productName: string;
-    userEmail: string;
-    timestamp: string;
-  }>;
-}
-
 function getDatabase(): DatabaseSchema {
   try {
     if (!fs.existsSync(DB_FILE)) {
@@ -95,16 +75,25 @@ function getDatabase(): DatabaseSchema {
             severity: 'info'
           }
         ],
-        downloads: []
+        downloads: [],
+        piPayments: [],
+        entitlements: []
       };
       fs.writeFileSync(DB_FILE, JSON.stringify(initialDb, null, 2), 'utf-8');
       return initialDb;
     }
     const raw = fs.readFileSync(DB_FILE, 'utf-8');
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    return {
+      users: Array.isArray(parsed.users) ? parsed.users : [],
+      auditLogs: Array.isArray(parsed.auditLogs) ? parsed.auditLogs : [],
+      downloads: Array.isArray(parsed.downloads) ? parsed.downloads : [],
+      piPayments: Array.isArray(parsed.piPayments) ? parsed.piPayments : [],
+      entitlements: Array.isArray(parsed.entitlements) ? parsed.entitlements : [],
+    };
   } catch (err) {
     console.error('Failed reading database file:', err);
-    return { users: [], auditLogs: [], downloads: [] };
+    return { users: [], auditLogs: [], downloads: [], piPayments: [], entitlements: [] };
   }
 }
 
@@ -207,122 +196,27 @@ app.get('/api/products', (req: Request, res: Response) => {
 
 // ... (keep existing setup)
 
-// Endpoint to verify payment transaction (Pi Testnet Sandbox)
-app.post('/api/verify-payment', async (req: Request, res: Response) => {
+// Endpoint to verify recorded payment transaction against server-side Pi U2A ledger
+app.post('/api/verify-payment', (req: Request, res: Response) => {
   try {
-    const { reference, provider, name, email, phone, country } = req.body;
-
-    if (!reference || !provider || !name || !email || !phone || !country) {
-      res.status(400).json({ success: false, error: 'Missing required payment details' });
-      return;
-    }
-
-    const db = getDatabase();
-    const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19);
-    const userAgent = req.headers['user-agent'] || 'Unknown Device';
-    const deviceType = userAgent.includes('Mobile') ? 'Mobile Device' : 'Desktop Device';
-
-    // Verify with Pi Testnet server-side
-    let isVerified = false;
-    if (provider === 'pi' || provider === 'pi_testnet') {
-        isVerified = true; 
-        
-        db.auditLogs.unshift({
-            id: `AL-${Date.now()}`,
-            action: `Pi Testnet (Sandbox) Test-Pi payment verified for tx ${reference}.`,
-            timestamp: timestamp,
-            user: email.toLowerCase(),
-            severity: 'info'
-        });
-    }
-
-    if (!isVerified) {
-        res.status(400).json({ success: false, error: 'Payment verification failed' });
-        return;
-    }
-    
-    let user = db.users.find(u => u.email.toLowerCase() === email.toLowerCase());
-    if (!user) {
-        user = {
-            id: `USR-${Math.floor(100000 + Math.random() * 900000)}`,
-            name,
-            email: email.toLowerCase(),
-            phone,
-            country,
-            status: 'Verified',
-            timestamp,
-            device: `${deviceType} (${req.ip || '127.0.0.1'})`
-        };
-        db.users.push(user);
-    } else {
-        user.status = 'Verified';
-        user.name = name;
-        user.phone = phone;
-        user.country = country;
-    }
-
-    db.auditLogs.unshift({
-        id: `AL-${Date.now()}`,
-        action: `Payment verified via ${provider}. User "${name}" (${email}) granted full access.`,
-        timestamp,
-        user: email.toLowerCase(),
-        severity: 'info'
-    });
-
-    saveDatabase(db);
-    res.json({ success: true, status: 'SUCCESS', message: 'Transaction Verified ✓', user });
-
+    const { reference, email } = req.body || {};
+    const result = verifyRecordedPayment({ reference, email }, { getDb: getDatabase });
+    res.status(result.httpStatus).json(result.body);
   } catch (err: any) {
-    console.error('Payment verification endpoint error:', err);
-    res.status(500).json({ success: false, status: 'FAILED', error: err.message });
+    console.error('Payment verification endpoint error:', err?.message || 'Unknown error');
+    res.status(500).json({ success: false, status: 'FAILED', error: 'Verification error' });
   }
 });
 
-// Also support /api/payment/verify (POST and GET callback)
-app.all('/api/payment/verify', async (req: Request, res: Response) => {
+// Also support /api/payment/verify (POST and GET callback) against server-side Pi U2A ledger
+app.all('/api/payment/verify', (req: Request, res: Response) => {
   try {
-    const reference = req.body?.reference || req.query?.reference || req.body?.tx_ref || req.query?.tx_ref || `TX-${Date.now()}`;
-    const provider = req.body?.provider || req.query?.provider || 'pi';
-    const email = req.body?.email || req.query?.email || 'member@sirwise.store';
-    const name = req.body?.name || req.query?.name || 'Verified Partner';
-    const phone = req.body?.phone || req.query?.phone || '+2348000000000';
-    const country = req.body?.country || req.query?.country || 'Nigeria';
-
-    const db = getDatabase();
-    const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19);
-    const userAgent = req.headers['user-agent'] || 'Unknown Device';
-    const deviceType = userAgent.includes('Mobile') ? 'Mobile Device' : 'Desktop Device';
-
-    let user = db.users.find(u => u.email.toLowerCase() === (email as string).toLowerCase());
-    if (!user) {
-      user = {
-        id: `USR-${Math.floor(100000 + Math.random() * 900000)}`,
-        name: name as string,
-        email: (email as string).toLowerCase(),
-        phone: phone as string,
-        country: country as string,
-        status: 'Verified',
-        timestamp,
-        device: `${deviceType} (${req.ip || '127.0.0.1'})`
-      };
-      db.users.push(user);
-    } else {
-      user.status = 'Verified';
-      user.name = name as string;
-    }
-
-    db.auditLogs.unshift({
-      id: `AL-${Date.now()}`,
-      action: `Payment callback verified via ${provider} (${reference}). User unlocked.`,
-      timestamp,
-      user: (email as string).toLowerCase(),
-      severity: 'info'
-    });
-
-    saveDatabase(db);
-    res.json({ success: true, status: 'SUCCESS', message: 'Transaction Verified ✓', reference, user });
+    const reference = String(req.body?.reference || req.query?.reference || req.body?.tx_ref || req.query?.tx_ref || '');
+    const email = String(req.body?.email || req.query?.email || '');
+    const result = verifyRecordedPayment({ reference, email }, { getDb: getDatabase });
+    res.status(result.httpStatus).json(result.body);
   } catch (err: any) {
-    res.status(500).json({ success: false, status: 'FAILED', error: err.message });
+    res.status(500).json({ success: false, status: 'FAILED', error: 'Callback verification failed' });
   }
 });
 
@@ -413,154 +307,69 @@ app.delete('/api/pi/auth', (_req: Request, res: Response) => {
   res.json({ authenticated: false });
 });
 
-// Pi Testnet Approve Endpoint (<10s response)
+// Pi Platform U2A Approve Endpoint (retrieves payment from api.minepi.com & validates before approving)
 app.post('/api/pi/approve', async (req: Request, res: Response) => {
   try {
-    const { paymentId } = req.body;
-    if (!paymentId) {
-      return res.status(400).json({ success: false, error: 'Missing paymentId' });
-    }
-
-    const apiKey = process.env.PI_API_KEY || '';
-    const apiUrl = 'https://api.testnet.minepi.com';
-
-    if (apiKey && !apiKey.includes('placeholder')) {
-      const response = await fetch(`${apiUrl}/v2/payments/${paymentId}/approve`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Key ${apiKey}`,
-          'Content-Type': 'application/json'
-        }
-      });
-      const data = await response.json();
-      if (!response.ok) {
-        console.error('Pi approve API error:', data);
-      }
-    }
-
-    const db = getDatabase();
-    const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19);
-    db.auditLogs.unshift({
-      id: `AL-${Date.now()}`,
-      action: `Pi Payment ${paymentId} approved successfully (<10s).`,
-      timestamp,
-      user: 'system@sirwise.store',
-      severity: 'info'
-    });
-    saveDatabase(db);
-
-    res.json({ success: true, status: 'APPROVED', paymentId });
+    const { paymentId, userUid, productId } = req.body || {};
+    const result = await approvePiPayment(
+      { paymentId, expectedUserUid: userUid, productIdHint: productId },
+      { getDb: getDatabase, saveDb: saveDatabase, getProducts }
+    );
+    res.status(result.httpStatus).json(result.body);
   } catch (err: any) {
-    console.error('Pi approve error:', err);
-    res.json({ success: true, status: 'APPROVED', paymentId: req.body?.paymentId });
+    console.error('Pi approve error:', err?.message || 'Unknown error');
+    res.status(500).json({ success: false, error: 'Failed to approve Pi payment' });
   }
 });
 
-// Pi Testnet Complete Endpoint
+// Pi Platform U2A Complete Endpoint (retrieves, validates, completes on api.minepi.com, and grants once)
 app.post('/api/pi/complete', async (req: Request, res: Response) => {
   try {
-    const { paymentId, txid, email, name, phone, country } = req.body;
-    if (!paymentId || !txid) {
-      return res.status(400).json({ success: false, error: 'Missing paymentId or txid' });
-    }
+    const { paymentId, txid, userUid, productId, email, name, phone, country } = req.body || {};
+    const userAgent = req.headers['user-agent'] || 'Unknown Device';
+    const device = userAgent.includes('Mobile') ? 'Mobile Device' : 'Desktop Device';
 
-    const apiKey = process.env.PI_API_KEY || '';
-    const apiUrl = 'https://api.testnet.minepi.com';
-
-    if (apiKey && !apiKey.includes('placeholder')) {
-      const response = await fetch(`${apiUrl}/v2/payments/${paymentId}/complete`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Key ${apiKey}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ txid })
-      });
-      const data = await response.json();
-      if (!response.ok) {
-        console.error('Pi complete API error:', data);
-      }
-    }
-
-    const db = getDatabase();
-    const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19);
-    const userEmail = (email || 'pioneer@minepi.com').toLowerCase();
-    const userName = name || 'Pi Pioneer';
-
-    let user = db.users.find(u => u.email.toLowerCase() === userEmail);
-    if (!user) {
-      user = {
-        id: `USR-${Math.floor(100000 + Math.random() * 900000)}`,
-        name: userName,
-        email: userEmail,
-        phone: phone || '+2348000000000',
-        country: country || 'Global',
-        status: 'Verified',
-        timestamp,
-        device: 'Pi Browser / Testnet'
-      };
-      db.users.push(user);
-    } else {
-      user.status = 'Verified';
-      user.name = userName;
-    }
-
-    db.auditLogs.unshift({
-      id: `AL-${Date.now()}`,
-      action: `Pi Payment ${paymentId} completed with txid ${txid} (10/10 green 💚). User verified.`,
-      timestamp,
-      user: userEmail,
-      severity: 'info'
-    });
-    saveDatabase(db);
-
-    res.json({ success: true, status: 'SUCCESS', verified: true, paymentId, txid, user });
+    const result = await completePiPayment(
+      { paymentId, txid, expectedUserUid: userUid, productIdHint: productId, email, name, phone, country, device },
+      { getDb: getDatabase, saveDb: saveDatabase, getProducts }
+    );
+    res.status(result.httpStatus).json(result.body);
   } catch (err: any) {
-    console.error('Pi complete error:', err);
-    res.json({ success: true, status: 'SUCCESS', verified: true, message: 'Completed successfully (10/10 green)' });
+    console.error('Pi complete error:', err?.message || 'Unknown error');
+    res.status(500).json({ success: false, error: 'Failed to complete Pi payment' });
   }
 });
 
-// Pi Testnet Cancel Endpoint for incomplete payments without txid
+// Pi Platform U2A Cancel Endpoint for incomplete payments without txid
 app.post('/api/pi/cancel', async (req: Request, res: Response) => {
   try {
-    const { paymentId } = req.body;
-    if (!paymentId) {
-      return res.status(400).json({ success: false, error: 'Missing paymentId' });
-    }
-
-    const apiKey = process.env.PI_API_KEY || '';
-    const apiUrl = 'https://api.testnet.minepi.com';
-
-    if (apiKey && !apiKey.includes('placeholder')) {
-      const response = await fetch(`${apiUrl}/v2/payments/${paymentId}/cancel`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Key ${apiKey}`,
-          'Content-Type': 'application/json'
-        }
-      });
-      if (!response.ok) {
-        const errText = await response.text();
-        console.error('Pi cancel API error:', errText);
-      }
-    }
-
-    const db = getDatabase();
-    const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19);
-    db.auditLogs.unshift({
-      id: `AL-${Date.now()}`,
-      action: `Incomplete Pi Testnet payment ${paymentId} cancelled.`,
-      timestamp,
-      user: 'system@sirwise.store',
-      severity: 'info'
-    });
-    saveDatabase(db);
-
-    res.json({ success: true, status: 'CANCELLED', paymentId });
+    const { paymentId } = req.body || {};
+    const result = await cancelPiPayment(
+      { paymentId },
+      { getDb: getDatabase, saveDb: saveDatabase, getProducts }
+    );
+    res.status(result.httpStatus).json(result.body);
   } catch (err: any) {
-    console.error('Pi cancel error:', err);
-    res.json({ success: true, status: 'CANCELLED', paymentId: req.body?.paymentId });
+    console.error('Pi cancel error:', err?.message || 'Unknown error');
+    res.status(500).json({ success: false, error: 'Failed to cancel Pi payment' });
+  }
+});
+
+// Pi Platform U2A Incomplete Payment Resume/Cleanup Endpoint
+app.post('/api/pi/incomplete', async (req: Request, res: Response) => {
+  try {
+    const { paymentId, txid, userUid, email, name, phone, country } = req.body || {};
+    const userAgent = req.headers['user-agent'] || 'Unknown Device';
+    const device = userAgent.includes('Mobile') ? 'Mobile Device' : 'Desktop Device';
+
+    const result = await handleIncompletePiPayment(
+      { paymentId, txid, expectedUserUid: userUid, email, name, phone, country, device },
+      { getDb: getDatabase, saveDb: saveDatabase, getProducts }
+    );
+    res.status(result.httpStatus).json(result.body);
+  } catch (err: any) {
+    console.error('Pi incomplete payment error:', err?.message || 'Unknown error');
+    res.status(500).json({ success: false, error: 'Failed to handle incomplete Pi payment' });
   }
 });
 
@@ -721,12 +530,14 @@ app.post('/api/admin/users/status', (req: Request, res: Response) => {
 
 // Clean dynamic config response
 app.get('/api/config', (req: Request, res: Response) => {
+  const configured = Boolean((process.env.PI_NETWORK_API_KEY || process.env.PI_API_KEY || '').trim());
   res.json({
     SYSTEM_MODE: 'VERIFICATION_ONLY',
     PLATFORM: 'SIRWISE Global Digital Hub',
     CHARTER: 'RC BN3583778',
     PI_TESTNET_ENABLED: true,
-    PI_API_KEY_CONFIGURED: !!process.env.PI_API_KEY,
+    PI_API_KEY_CONFIGURED: configured,
+    PI_NETWORK_API_KEY_CONFIGURED: configured,
     VALIDATION_KEY: process.env.VALIDATION_KEY || 'f1d2fd990366c6095405cabec435395ab465da166fa9a20d93eb95175cafee6ef988eddcf245344be1f69b19b70712896cd5ce371bf0a8da46ff77f0b5000bc1'
   });
 });

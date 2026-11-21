@@ -1,4 +1,5 @@
-import { getDatabase, saveDatabase, parseBody, type ApiRequest, type ApiResponse } from './_store';
+import { parseBody, type ApiRequest, type ApiResponse } from './_store';
+import { verifyRecordedPayment } from './_pi';
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
   if (req.method !== 'POST') {
@@ -7,68 +8,11 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   }
 
   try {
-    const { reference, provider, name, email, phone, country } = parseBody(req);
-
-    if (!reference || !provider || !name || !email || !phone || !country) {
-      res.status(400).json({ success: false, error: 'Missing required payment details' });
-      return;
-    }
-
-    const db = getDatabase();
-    const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19);
-    const userAgent = (req.headers['user-agent'] as string) || 'Unknown Device';
-    const deviceType = userAgent.includes('Mobile') ? 'Mobile Device' : 'Desktop Device';
-
-    let isVerified = false;
-    if (provider === 'pi' || provider === 'pi_testnet') {
-      isVerified = true;
-
-      db.auditLogs.unshift({
-        id: `AL-${Date.now()}`,
-        action: `Pi Testnet (Sandbox) Test-Pi payment verified for tx ${reference}.`,
-        timestamp,
-        user: String(email).toLowerCase(),
-        severity: 'info',
-      });
-    }
-
-    if (!isVerified) {
-      res.status(400).json({ success: false, error: 'Payment verification failed' });
-      return;
-    }
-
-    let user = db.users.find((u) => u.email.toLowerCase() === String(email).toLowerCase());
-    if (!user) {
-      user = {
-        id: `USR-${Math.floor(100000 + Math.random() * 900000)}`,
-        name,
-        email: String(email).toLowerCase(),
-        phone,
-        country,
-        status: 'Verified',
-        timestamp,
-        device: deviceType,
-      };
-      db.users.push(user);
-    } else {
-      user.status = 'Verified';
-      user.name = name;
-      user.phone = phone;
-      user.country = country;
-    }
-
-    db.auditLogs.unshift({
-      id: `AL-${Date.now()}`,
-      action: `Payment verified via ${provider}. User "${name}" (${email}) granted full access.`,
-      timestamp,
-      user: String(email).toLowerCase(),
-      severity: 'info',
-    });
-
-    saveDatabase(db);
-    res.status(200).json({ success: true, status: 'SUCCESS', message: 'Transaction Verified ✓', user });
+    const { reference, email } = parseBody(req);
+    const result = verifyRecordedPayment({ reference, email });
+    res.status(result.httpStatus).json(result.body);
   } catch (err: any) {
-    console.error('Payment verification endpoint error:', err);
-    res.status(500).json({ success: false, status: 'FAILED', error: err?.message || 'Verification error' });
+    console.error('Payment verification endpoint error:', err?.message || 'Unknown error');
+    res.status(500).json({ success: false, status: 'FAILED', error: 'Verification error' });
   }
 }

@@ -174,12 +174,11 @@ export default function App() {
   const [isPiAuthenticating, setIsPiAuthenticating] = useState(false);
   const [piNotice, setPiNotice] = useState('');
   const piInitPromiseRef = useRef<Promise<boolean> | null>(null);
+  const piInitVerifiedRef = useRef(false);
   const piAuthInFlightRef = useRef(false);
 
-  // Strict window.Pi detection only (never user-agent)
-  const [isPiBrowser, setIsPiBrowser] = useState<boolean>(() => {
-    return typeof window !== 'undefined' && Boolean((window as any).Pi);
-  });
+  // True only after Pi.init() receives a Pi Browser / App Studio host bridge response (never user-agent)
+  const [isPiBrowser, setIsPiBrowser] = useState<boolean>(false);
 
   // Pi Testnet Sandbox Developer Audit Flow State (strictly developer testing, separated from live data)
   const [sandboxSteps, setSandboxSteps] = useState([
@@ -277,55 +276,61 @@ export default function App() {
       .catch(() => {});
   }, []);
 
-  // Handle incomplete payments: complete if txid exists, else cancel so yesterday's stuck payment never blocks today's
+  // Handle incomplete payments via authoritative backend handler: complete if txid exists, else cancel
   const onIncompletePaymentFound = async (payment: any) => {
     console.warn("Incomplete Pi payment detected:", payment);
     try {
       const paymentId = payment?.identifier;
       const txid = payment?.transaction?.txid;
-      if (txid) {
-        if (typeof payment?.complete === 'function') {
-          await Promise.race([
-            Promise.resolve(payment.complete()),
-            new Promise((resolve) => setTimeout(resolve, 4000)),
-          ]);
+      if (!paymentId) return;
+
+      if (txid && typeof payment?.complete === 'function') {
+        await Promise.race([
+          Promise.resolve(payment.complete()),
+          new Promise((resolve) => setTimeout(resolve, 4000)),
+        ]);
+      } else if (!txid && typeof payment?.cancel === 'function') {
+        await Promise.race([
+          Promise.resolve(payment.cancel()),
+          new Promise((resolve) => setTimeout(resolve, 4000)),
+        ]);
+      }
+
+      const res = await fetch('/api/pi/incomplete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          paymentId,
+          txid,
+          userUid: piAuthUser?.uid,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data?.success && data?.verified && data?.productId && data.productId !== 'admin-testnet-diagnostic') {
+        setUnlockedProductIds((prev) => {
+          const updated = Array.from(new Set([...prev, data.productId]));
+          try { localStorage.setItem('sirwise_unlocked_products', JSON.stringify(updated)); } catch {}
+          return updated;
+        });
+        if (data.user) {
+          setCurrentUser({ ...data.user, isLoggedIn: true, role: 'buyer' });
+          try { localStorage.setItem('sirwise_hub_user', JSON.stringify({ ...data.user, isLoggedIn: true })); } catch {}
         }
-        if (paymentId) {
-          await Promise.race([
-            fetch('/api/pi/complete', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ paymentId, txid }),
-            }),
-            new Promise((resolve) => setTimeout(resolve, 4000)),
-          ]);
-        }
-      } else {
-        if (typeof payment?.cancel === 'function') {
-          await Promise.race([
-            Promise.resolve(payment.cancel()),
-            new Promise((resolve) => setTimeout(resolve, 4000)),
-          ]);
-        }
-        if (paymentId) {
-          await Promise.race([
-            fetch('/api/pi/cancel', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ paymentId }),
-            }),
-            new Promise((resolve) => setTimeout(resolve, 4000)),
-          ]);
-        }
+        setPiNotice('Previous incomplete Pi Testnet payment was verified and recovered ✅');
       }
     } catch (err) {
       console.error("Incomplete Pi payment cleanup error:", err);
     }
   };
 
-  // Wait for https://sdk.minepi.com/pi-sdk.js if needed, then await Pi.init({ version: "2.0" }) (auto-detected sandbox)
-  const ensurePiInit = async (): Promise<boolean> => {
+  // Wait for https://sdk.minepi.com/pi-sdk.js, run Pi.init({ version: "2.0" }), and race against host bridge response
+  const ensurePiInit = async (interactive = false): Promise<boolean> => {
     if (typeof window === 'undefined') return false;
+
+    if (piInitVerifiedRef.current) {
+      setIsPiBrowser(true);
+      return true;
+    }
 
     if (!(window as any).Pi) {
       for (let i = 0; i < 30; i++) {
@@ -339,25 +344,38 @@ export default function App() {
       return false;
     }
 
-    setIsPiBrowser(true);
     if (!piInitPromiseRef.current) {
-      piInitPromiseRef.current = (async () => {
-        try {
-          await Promise.resolve((window as any).Pi.init({ version: "2.0" }));
+      piInitPromiseRef.current = Promise.resolve((window as any).Pi.init({ version: "2.0" }))
+        .then(() => {
+          piInitVerifiedRef.current = true;
+          setIsPiBrowser(true);
           return true;
-        } catch (err) {
-          console.error("Pi.init error:", err);
-          return Boolean((window as any).Pi);
-        }
-      })();
+        })
+        .catch((err: any) => {
+          piInitPromiseRef.current = null;
+          setIsPiBrowser(false);
+          const msg = String(err?.message || err || '');
+          if (msg && !msg.includes('timed out')) {
+            console.warn("Pi.init unavailable:", msg);
+          }
+          return false;
+        });
     }
-    return piInitPromiseRef.current;
+
+    const waitMs = interactive ? 8000 : 4000;
+    const ready = await Promise.race([
+      piInitPromiseRef.current,
+      new Promise<boolean>((resolve) => setTimeout(() => resolve(false), waitMs)),
+    ]);
+
+    setIsPiBrowser(ready);
+    return ready;
   };
 
   // Unified Pi authentication -> immediately POST ONLY { accessToken } to App Studio login endpoint
   const authenticateWithPi = async (interactive = false, scopes: string[] = ['username']) => {
     if (piAuthInFlightRef.current) return null;
-    const ready = await ensurePiInit();
+    const ready = await ensurePiInit(interactive);
     if (!ready || !(window as any).Pi) {
       if (interactive) {
         setPiNotice("Open inside Pi Browser to sign in with Pi.");
@@ -439,7 +457,7 @@ export default function App() {
 
     const runInitOnLoad = async () => {
       if (typeof window === 'undefined') return;
-      const ready = await ensurePiInit();
+      const ready = await ensurePiInit(false);
       if (ready && !cancelled) {
         await authenticateWithPi(false, ['username']);
       }
@@ -451,49 +469,17 @@ export default function App() {
     };
   }, []);
 
-  // Server-side Payment Verification — Activates unlock ONLY upon verified gateway callback
-  const verifyLivePayment = async (payload: any) => {
-    setIsSubmittingCheckout(true);
-    try {
-      const res = await fetch('/api/verify-payment', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      const data = await res.json();
-      
-      if (data.success && selectedProduct) {
-        const updated = Array.from(new Set([...unlockedProductIds, selectedProduct.id]));
-        setUnlockedProductIds(updated);
-        localStorage.setItem('sirwise_unlocked_products', JSON.stringify(updated));
-
-        setCheckoutStatus({ success: true, message: 'TRANSACTION VERIFIED ✅' });
-        
-        if (data.user) {
-          setCurrentUser({ ...data.user, isLoggedIn: true, role: 'buyer' });
-          localStorage.setItem('sirwise_hub_user', JSON.stringify({ ...data.user, isLoggedIn: true }));
-        }
-      } else {
-        setPiNotice(data.error || 'Payment verification failed. Access remains locked.');
-      }
-    } catch (err) {
-      setPiNotice('Network or verification error. Please verify your internet connection.');
-    } finally {
-      setIsSubmittingCheckout(false);
-    }
-  };
-
   // Sign in with Pi button handler
   const handlePiAuth = async () => {
     await authenticateWithPi(true, ['username']);
   };
 
-  // Pi Testnet (Sandbox) Payment execution — Test-Pi Only
+  // Pi Testnet (Sandbox) User-to-App (U2A) Payment execution — Test-Pi Only
   const handlePiTestnetPayment = async () => {
     if (!selectedProduct) return;
     setPiNotice('');
 
-    const ready = await ensurePiInit();
+    const ready = await ensurePiInit(true);
     if (!ready || !(window as any).Pi || !(window as any).Pi.createPayment) {
       setPiNotice("Open this page inside Pi Browser to complete Pi payment.");
       return;
@@ -526,14 +512,21 @@ export default function App() {
         },
       }, {
         onReadyForServerApproval: async (paymentId: string) => {
-          try {
-            await fetch('/api/pi/approve', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ paymentId })
-            });
-          } catch (err) {
-            console.error("Pi approve request error:", err);
+          const res = await fetch('/api/pi/approve', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              paymentId,
+              userUid: activeUser.uid,
+              productId: selectedProduct.id,
+            }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok || !data?.success) {
+            const msg = data?.error || 'Server payment approval rejected.';
+            setPiNotice(msg);
+            setIsSubmittingCheckout(false);
+            throw new Error(msg);
           }
         },
         onReadyForServerCompletion: async (paymentId: string, txid: string) => {
@@ -544,33 +537,35 @@ export default function App() {
               body: JSON.stringify({
                 paymentId,
                 txid,
+                userUid: activeUser.uid,
+                productId: selectedProduct.id,
                 email: safeEmail,
                 name: safeName,
                 phone: safePhone,
-                country: safeCountry
-              })
+                country: safeCountry,
+              }),
             });
-            const data = await res.json();
-            if (data.success || data.verified) {
-              await verifyLivePayment({
-                reference: txid || paymentId,
-                provider: 'pi_testnet',
-                name: safeName,
-                email: safeEmail,
-                phone: safePhone,
-                country: safeCountry
+            const data = await res.json().catch(() => ({}));
+            if (res.ok && data?.success && data?.verified) {
+              const targetProductId = data.productId || selectedProduct.id;
+              setUnlockedProductIds((prev) => {
+                const updated = Array.from(new Set([...prev, targetProductId]));
+                try { localStorage.setItem('sirwise_unlocked_products', JSON.stringify(updated)); } catch {}
+                return updated;
               });
+              setCheckoutStatus({ success: true, message: 'TRANSACTION VERIFIED ✅' });
+              if (data.user) {
+                setCurrentUser({ ...data.user, isLoggedIn: true, role: 'buyer' });
+                try { localStorage.setItem('sirwise_hub_user', JSON.stringify({ ...data.user, isLoggedIn: true })); } catch {}
+              }
+            } else {
+              setPiNotice(data?.error || 'Server payment verification failed. Access remains locked.');
             }
           } catch (err) {
             console.error("Pi complete request error:", err);
-            await verifyLivePayment({
-              reference: txid || paymentId,
-              provider: 'pi_testnet',
-              name: safeName,
-              email: safeEmail,
-              phone: safePhone,
-              country: safeCountry
-            });
+            setPiNotice('Network error while confirming Pi completion. Reopen in Pi Browser to resume automatically.');
+          } finally {
+            setIsSubmittingCheckout(false);
           }
         },
         onCancel: async (paymentId: string) => {
@@ -600,7 +595,7 @@ export default function App() {
   // Admin-Only Pi Testnet Payment Test (1 Test-Pi, never unlocks storefront items)
   const handleAdminPiTestnetTest = async () => {
     setDeveloperNotice("Initializing Admin Pi Testnet payment test...");
-    const ready = await ensurePiInit();
+    const ready = await ensurePiInit(true);
     if (ready && (window as any).Pi?.createPayment) {
       try {
         const activeUser = await authenticateWithPi(true, ['username', 'payments']);
@@ -615,19 +610,39 @@ export default function App() {
           metadata: { isTestnet: true, adminTest: true }
         }, {
           onReadyForServerApproval: async (paymentId: string) => {
-            await fetch('/api/pi/approve', {
+            const res = await fetch('/api/pi/approve', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ paymentId })
+              body: JSON.stringify({
+                paymentId,
+                userUid: activeUser.uid,
+                productId: 'admin-testnet-diagnostic',
+              }),
             });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || !data?.success) {
+              throw new Error(data?.error || 'Admin diagnostic approval failed');
+            }
           },
           onReadyForServerCompletion: async (paymentId: string, txid: string) => {
-            await fetch('/api/pi/complete', {
+            const res = await fetch('/api/pi/complete', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ paymentId, txid, email: 'admin-test@sirwise.store', name: 'Admin Testnet Check' })
+              body: JSON.stringify({
+                paymentId,
+                txid,
+                userUid: activeUser.uid,
+                productId: 'admin-testnet-diagnostic',
+                email: 'admin-test@sirwise.store',
+                name: 'Admin Testnet Check',
+              }),
             });
-            setDeveloperNotice(`Admin Testnet Payment Completed ✅ (txid: ${txid}). Storefront products remain untouched.`);
+            const data = await res.json().catch(() => ({}));
+            if (res.ok && data?.success && data?.verified) {
+              setDeveloperNotice(`Admin Testnet Payment Completed ✅ (txid: ${txid}). Storefront products remain untouched.`);
+            } else {
+              setDeveloperNotice(`Admin Testnet completion failed: ${data?.error || 'Verification rejected'}`);
+            }
           },
           onCancel: async (paymentId: string) => {
             if (paymentId) {
@@ -650,19 +665,18 @@ export default function App() {
       }
     }
 
-    // Fallback server endpoint check if opened outside Pi Browser
+    // Outside Pi Browser: check server configuration status cleanly without spoofing payments
     try {
-      await fetch('/api/pi/sandbox-verify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          txid: `DEV-TEST-${Date.now()}`,
-          email: 'developer@minepi.com'
-        })
-      });
-      setDeveloperNotice("Admin Testnet endpoint check completed ✅ (Open /admin inside Pi Browser to test live Test-Pi wallet checkout).");
+      const res = await fetch('/api/config');
+      const cfg = await res.json().catch(() => ({}));
+      const configured = Boolean(cfg?.PI_NETWORK_API_KEY_CONFIGURED || cfg?.PI_API_KEY_CONFIGURED);
+      setDeveloperNotice(
+        configured
+          ? "Server PI_NETWORK_API_KEY is configured ✅. Open /admin inside Pi Browser to test a live 1 Test-Pi U2A payment."
+          : "PI_NETWORK_API_KEY is not configured on the server yet. Add it in Vercel/hosting environment variables, then open /admin inside Pi Browser."
+      );
     } catch {
-      setDeveloperNotice("Admin Testnet check completed. Storefront products remain securely locked.");
+      setDeveloperNotice("Open /admin inside Pi Browser to run a live 1 Test-Pi U2A payment check.");
     }
   };
 
@@ -796,7 +810,6 @@ export default function App() {
     setCheckoutStatus(null);
     setDeveloperNotice('');
     setPiNotice('');
-    setIsPiBrowser(typeof window !== 'undefined' && Boolean((window as any).Pi));
     setBillingName(currentUser.name || '');
     setBillingEmail(currentUser.email || '');
     setBillingPhone(currentUser.phone || '');
@@ -804,12 +817,12 @@ export default function App() {
     setSelectedGateway('pi_testnet');
   };
 
-  // Perform Pi Testnet Payment (when window.Pi exists, always trigger Pi.createPayment without blocking)
+  // Perform Pi Testnet Payment
   const executePayment = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedProduct) return;
 
-    if (!(window as any).Pi && !piAuthUser && (!billingName.trim() || !billingEmail.trim() || !billingPhone.trim())) {
+    if (!piInitVerifiedRef.current && !piAuthUser && (!billingName.trim() || !billingEmail.trim() || !billingPhone.trim())) {
       setPiNotice("Please fill in your legal name, email, and phone number.");
       return;
     }

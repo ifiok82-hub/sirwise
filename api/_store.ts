@@ -14,6 +14,30 @@ export interface ApiResponse extends ServerResponse {
   setHeader: (name: string, value: string | string[]) => this;
 }
 
+export interface PiPaymentRecord {
+  paymentId: string;
+  txid?: string;
+  userUid: string;
+  productId: string;
+  amount: number;
+  direction: 'user_to_app';
+  network?: string;
+  status: 'created' | 'approved' | 'completed' | 'cancelled';
+  fulfilled: boolean;
+  fulfilledAt?: string;
+  email?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface EntitlementRecord {
+  userUid: string;
+  productId: string;
+  paymentId: string;
+  txid: string;
+  grantedAt: string;
+}
+
 export interface DatabaseSchema {
   users: Array<{
     id: string;
@@ -39,6 +63,8 @@ export interface DatabaseSchema {
     userEmail: string;
     timestamp: string;
   }>;
+  piPayments?: PiPaymentRecord[];
+  entitlements?: EntitlementRecord[];
 }
 
 const TMP_DB_FILE = '/tmp/sirwise-db.json';
@@ -55,20 +81,29 @@ export function parseBody(req: ApiRequest): Record<string, any> {
   return req.body;
 }
 
+function normalizeDb(parsed: Partial<DatabaseSchema>): DatabaseSchema {
+  return {
+    users: Array.isArray(parsed.users) ? parsed.users : [],
+    auditLogs: Array.isArray(parsed.auditLogs) ? parsed.auditLogs : [],
+    downloads: Array.isArray(parsed.downloads) ? parsed.downloads : [],
+    piPayments: Array.isArray(parsed.piPayments) ? parsed.piPayments : [],
+    entitlements: Array.isArray(parsed.entitlements) ? parsed.entitlements : [],
+  };
+}
+
 export function getDatabase(): DatabaseSchema {
   try {
     if (fs.existsSync(TMP_DB_FILE)) {
-      return JSON.parse(fs.readFileSync(TMP_DB_FILE, 'utf-8'));
+      return normalizeDb(JSON.parse(fs.readFileSync(TMP_DB_FILE, 'utf-8')));
     }
     const repoDb = path.resolve(process.cwd(), 'data', 'db.json');
     if (fs.existsSync(repoDb)) {
-      return JSON.parse(fs.readFileSync(repoDb, 'utf-8'));
+      return normalizeDb(JSON.parse(fs.readFileSync(repoDb, 'utf-8')));
     }
   } catch (err) {
     console.error('Database read warning:', err);
   }
-  return {
-    users: [],
+  return normalizeDb({
     auditLogs: [
       {
         id: 'AL-1',
@@ -78,19 +113,26 @@ export function getDatabase(): DatabaseSchema {
         severity: 'info',
       },
     ],
-    downloads: [],
-  };
+  });
 }
 
 export function saveDatabase(db: DatabaseSchema): void {
   try {
-    fs.writeFileSync(TMP_DB_FILE, JSON.stringify(db, null, 2), 'utf-8');
+    fs.writeFileSync(TMP_DB_FILE, JSON.stringify(normalizeDb(db), null, 2), 'utf-8');
   } catch (err) {
     console.error('Database write warning:', err);
   }
 }
 
-export function getProductsList() {
+export function getProductsList(): Array<{
+  id: string;
+  sku: string;
+  name: string;
+  category: string;
+  priceUSD: number;
+  pricePI: number;
+  downloadUrl: string;
+}> {
   try {
     const productsFile = path.resolve(process.cwd(), 'data', 'products.json');
     if (fs.existsSync(productsFile)) {
