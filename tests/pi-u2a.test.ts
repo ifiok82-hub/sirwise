@@ -6,8 +6,8 @@ import {
   handleIncompletePiPayment,
   verifyRecordedPayment,
   type PiPlatformPayment,
-} from '../api/_pi';
-import { getProductsList, type DatabaseSchema } from '../api/_store';
+} from '../api/_pi.js';
+import { getProductsList, type DatabaseSchema } from '../api/_store.js';
 
 const TEST_ONLY_KEY = 'test-mock-pi-key-not-real';
 

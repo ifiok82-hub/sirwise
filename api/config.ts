@@ -1,4 +1,4 @@
-import type { ApiRequest, ApiResponse } from './_store';
+import type { ApiRequest, ApiResponse } from './_store.js';
 
 export default function handler(req: ApiRequest, res: ApiResponse) {
   const configured = Boolean((process.env.PI_NETWORK_API_KEY || process.env.PI_API_KEY || '').trim());

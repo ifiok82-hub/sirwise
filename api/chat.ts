@@ -1,5 +1,5 @@
 import { GoogleGenAI } from '@google/genai';
-import { parseBody, type ApiRequest, type ApiResponse } from './_store';
+import { parseBody, type ApiRequest, type ApiResponse } from './_store.js';
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
   if (req.method !== 'POST') {

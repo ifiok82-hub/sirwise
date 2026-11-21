@@ -4,7 +4,7 @@ import {
   getProductsList,
   type DatabaseSchema,
   type PiPaymentRecord,
-} from './_store';
+} from './_store.js';
 
 export const PI_PLATFORM_API_BASE = 'https://api.minepi.com';
 
@@ -265,8 +265,6 @@ export async function approvePiPayment(
       updatedAt: ts,
     };
     db.piPayments.unshift(record);
-    // Persist payment identifier before calling Pi approve API
-    saveDb(db);
   }
 
   if (!payment.status?.developer_approved) {

@@ -1,4 +1,4 @@
-import { getDatabase, saveDatabase, parseBody, type ApiRequest, type ApiResponse } from '../_store';
+import { getDatabase, saveDatabase, parseBody, type ApiRequest, type ApiResponse } from '../_store.js';
 
 export default function handler(req: ApiRequest, res: ApiResponse) {
   const body = parseBody(req);

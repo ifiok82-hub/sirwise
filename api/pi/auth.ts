@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { getDatabase, saveDatabase, parseBody, type ApiRequest, type ApiResponse } from '../_store';
+import { getDatabase, saveDatabase, parseBody, type ApiRequest, type ApiResponse } from '../_store.js';
 
 const APP_STUDIO_LOGIN_URL = 'https://backend.appstudio-u7cm9zhmha0ruwv8.piappengine.com/pi/auth/v1/login';
 

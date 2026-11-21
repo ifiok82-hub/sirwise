@@ -1,4 +1,4 @@
-import { getDatabase, type ApiRequest, type ApiResponse } from '../_store';
+import { getDatabase, type ApiRequest, type ApiResponse } from '../_store.js';
 
 export default function handler(req: ApiRequest, res: ApiResponse) {
   const db = getDatabase();

@@ -1,5 +1,5 @@
-import { parseBody, type ApiRequest, type ApiResponse } from '../_store';
-import { cancelPiPayment } from '../_pi';
+import { parseBody, type ApiRequest, type ApiResponse } from '../_store.js';
+import { cancelPiPayment } from '../_pi.js';
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
   if (req.method !== 'POST') {

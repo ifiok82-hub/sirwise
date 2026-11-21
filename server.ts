@@ -5,14 +5,14 @@ import dotenv from 'dotenv';
 import { GoogleGenAI } from '@google/genai';
 import fs from 'fs';
 import crypto from 'crypto';
-import type { DatabaseSchema } from './api/_store';
+import type { DatabaseSchema } from './api/_store.js';
 import {
   approvePiPayment,
   completePiPayment,
   cancelPiPayment,
   handleIncompletePiPayment,
   verifyRecordedPayment,
-} from './api/_pi';
+} from './api/_pi.js';
 
 dotenv.config();
 
