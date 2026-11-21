@@ -5,15 +5,32 @@
   "installCommand": "npm install --legacy-peer-deps",
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/$1" },
-    { "source": "/((?!api/).*)", "destination": "/index.html" }
+    { "source": "/((?!api/|pi-app-validation\\.txt$|validation-key\\.txt$|sitemap\\.xml$).*)", "destination": "/index.html" }
   ],
   "headers": [
+    {
+      "source": "/pi-app-validation.txt",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "text/plain; charset=utf-8"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=0, must-revalidate"
+        }
+      ]
+    },
     {
       "source": "/(.*)",
       "headers": [
         {
           "key": "Content-Security-Policy",
-          "value": "frame-ancestors 'self' https://*.minepi.com https://*.pinet.com https://*.pi.app https://*.pi-browser.app https://app-studio.minepi.com https://*.vercel.app; img-src 'self' data: blob: https:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://sdk.minepi.com https:; connect-src 'self' https://api.minepi.com https://api.testnet.minepi.com https://*.minepi.com https: wss:"
+          "value": "frame-ancestors 'self' https://*.minepi.com https://*.pinet.com https://*.pi.app https://*.pi-browser.app https://app-studio.minepi.com https://*.vercel.app https://*.piappengine.com; img-src 'self' data: blob: https:; script-src 'self' 'unsafe-inline' https://sdk.minepi.com https:; connect-src 'self' https://socialchain.app https://backend.appstudio-u7cm9zhmha0ruwv8.piappengine.com https://api.testnet.minepi.com https://*.minepi.com https: wss:; style-src 'self' 'unsafe-inline' https:;"
+        },
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
         }
       ]
     }
