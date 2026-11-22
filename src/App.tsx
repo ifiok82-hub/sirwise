@@ -156,15 +156,18 @@ export default function App() {
   // Logo taps tracker for secret gateway trigger
   const [logoTaps, setLogoTaps] = useState(0);
 
-  // Pi Browser & App Studio Authenticated Identity (populated ONLY from App Studio response; username never shown publicly)
+  // Pi Browser & App Studio Authenticated Identity (App Studio preferred when available, fallback to Pi.authenticate; username never shown publicly)
   const [piAuthUser, setPiAuthUser] = useState<{ uid: string; username: string } | null>(() => {
     try {
       const saved = localStorage.getItem('sirwise_pi_user');
       if (saved) {
         const parsed = JSON.parse(saved);
         const ageMs = Date.now() - (Number(parsed?.verifiedAt) || 0);
-        if (parsed?.uid && parsed?.username && ageMs < 24 * 60 * 60 * 1000) {
-          return { uid: String(parsed.uid), username: String(parsed.username) };
+        if ((parsed?.uid || parsed?.username) && ageMs < 24 * 60 * 60 * 1000) {
+          return {
+            uid: parsed?.uid ? String(parsed.uid) : '',
+            username: parsed?.username ? String(parsed.username) : 'Pioneer',
+          };
         }
         localStorage.removeItem('sirwise_pi_user');
       }
@@ -408,7 +411,54 @@ export default function App() {
     return ready;
   };
 
-  // Unified Pi authentication -> immediately POST ONLY { accessToken } to App Studio login endpoint
+  // Non-blocking App Studio verification: POST ONLY { accessToken }, log-only on failure, NEVER blocks Pi payment
+  const verifyAppStudioNonBlocking = async (accessToken: string): Promise<{ uid: string; username: string } | null> => {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3000);
+      const res = await fetch('https://backend.appstudio-u7cm9zhmha0ruwv8.piappengine.com/pi/auth/v1/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accessToken }),
+        signal: controller.signal,
+      }).finally(() => clearTimeout(timeoutId));
+
+      if (!res.ok) {
+        console.log("AppStudio auth failed", res.status);
+        return null;
+      }
+
+      const data = await res.json().catch(() => ({}));
+      const verifiedUid = data?.user?.uid;
+      const verifiedUsername = data?.user?.username;
+
+      if (!verifiedUid || !verifiedUsername) {
+        console.log("AppStudio auth failed", "Missing verified user identity");
+        return null;
+      }
+
+      console.log("AppStudio auth sent");
+      const appStudioUser = {
+        uid: String(verifiedUid),
+        username: String(verifiedUsername),
+      };
+
+      const payload = {
+        type: 'PI_AUTH_SUCCESS',
+        user: { uid: appStudioUser.uid },
+        accessToken,
+      };
+      try { window.parent.postMessage(payload, '*'); } catch {}
+      try { window.postMessage(payload, '*'); } catch {}
+
+      return appStudioUser;
+    } catch (err) {
+      console.log("AppStudio auth failed", err);
+      return null;
+    }
+  };
+
+  // Unified Pi authentication -> keeps Pi.authenticate result; App Studio POST is strictly non-blocking
   const authenticateWithPi = async (interactive = false, scopes: string[] = ['username']) => {
     if (piAuthInFlightRef.current) {
       if (!interactive) {
@@ -445,55 +495,45 @@ export default function App() {
           throw new Error("Missing Pi accessToken");
         }
 
-        // Immediately POST ONLY { accessToken } to App Studio (never send username, uid, or extra fields)
-        const res = await fetch('https://backend.appstudio-u7cm9zhmha0ruwv8.piappengine.com/pi/auth/v1/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ accessToken }),
-        });
-
-        if (!res.ok) {
-          console.log("AppStudio auth failed", res.status);
-          throw new Error("App Studio authentication failed");
-        }
-
-        const data = await res.json();
-        const verifiedUid = data?.user?.uid;
-        const verifiedUsername = data?.user?.username;
-
-        if (!verifiedUid || !verifiedUsername) {
-          console.log("AppStudio auth failed", "Missing verified user identity");
-          throw new Error("Invalid App Studio user identity response");
-        }
-
-        console.log("AppStudio auth sent");
-
-        // Only trust uid/username returned by App Studio; never display username publicly
-        const verifiedUser = {
-          uid: String(verifiedUid),
-          username: String(verifiedUsername),
+        // Start from Pi.authenticate identity (always works in Pi Browser even if App Studio backend fails)
+        let resolvedUser = {
+          uid: auth?.user?.uid ? String(auth.user.uid) : (piAuthUser?.uid || ''),
+          username: auth?.user?.username ? String(auth.user.username) : (piAuthUser?.username || 'Pioneer'),
         };
-        setPiAuthUser(verifiedUser);
+
+        if (scopes.includes('payments')) {
+          // Payment flow: never block PAY NOW waiting on App Studio; send verification in background
+          void verifyAppStudioNonBlocking(accessToken).then((appStudioUser) => {
+            if (appStudioUser) {
+              setPiAuthUser(appStudioUser);
+              try {
+                localStorage.setItem(
+                  'sirwise_pi_user',
+                  JSON.stringify({ ...appStudioUser, verifiedAt: Date.now() })
+                );
+              } catch {}
+            }
+          });
+        } else {
+          const appStudioUser = await verifyAppStudioNonBlocking(accessToken);
+          if (appStudioUser) {
+            resolvedUser = appStudioUser;
+          }
+        }
+
+        setPiAuthUser(resolvedUser);
         try {
           localStorage.setItem(
             'sirwise_pi_user',
-            JSON.stringify({ ...verifiedUser, verifiedAt: Date.now() })
+            JSON.stringify({ ...resolvedUser, verifiedAt: Date.now() })
           );
         } catch {}
 
-        const payload = {
-          type: 'PI_AUTH_SUCCESS',
-          user: { uid: verifiedUser.uid },
-          accessToken,
-        };
-        try { window.parent.postMessage(payload, '*'); } catch {}
-        try { window.postMessage(payload, '*'); } catch {}
-
-        return verifiedUser;
+        return resolvedUser;
       } catch (err: any) {
-        console.log("AppStudio auth failed", err);
+        console.log("Pi.authenticate failed", err);
         if (interactive) {
-          setPiNotice(err?.message || "Pi sign-in was cancelled or could not be verified.");
+          setPiNotice("Pi sign-in was cancelled or could not be completed.");
         }
         return null;
       } finally {
@@ -551,13 +591,13 @@ export default function App() {
     let friendlyNoticeSet = false;
 
     try {
-      await ensurePiInit(true);
-      if (!(window as any).Pi || !(window as any).Pi.createPayment) {
+      const piInitReady = await ensurePiInit(true);
+      if (!piInitReady || !(window as any).Pi || !(window as any).Pi.createPayment) {
         setPiNotice("Open this page inside Pi Browser to complete Pi payment.");
         return;
       }
 
-      // Fresh Pi.authenticate with payments scope clears/cancels any incomplete payment before createPayment
+      // Sign in via Pi.authenticate (payments scope) — NEVER blocked by App Studio verification
       const activeUser = await authenticateWithPi(true, ['username', 'payments']);
       if (!activeUser) {
         return;
@@ -565,10 +605,9 @@ export default function App() {
 
       const Pi = (window as any).Pi;
       const testPiAmount = selectedProduct.pricePI || 1;
-      const safeName = billingName.trim() || 'SIRWISE Partner';
-      const safeEmail = billingEmail.trim() || `partner-${activeUser.uid.slice(0, 8)}@sirwise.store`;
-      const safePhone = billingPhone.trim() || '+2348000000000';
-      const safeCountry = billingCountry.trim() || 'Global';
+      // Never use manually typed billing name/email/phone for Pi payment — only App Studio / Pi.authenticate uid & username
+      const piUid = activeUser.uid || undefined;
+      const piUsername = activeUser.username || 'Pioneer';
 
       await Pi.createPayment({
         amount: testPiAmount,
@@ -588,7 +627,7 @@ export default function App() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               paymentId,
-              userUid: activeUser.uid,
+              userUid: piUid,
               productId: selectedProduct.id,
             }),
           });
@@ -611,7 +650,7 @@ export default function App() {
             friendlyNoticeSet = true;
             setPiNotice(
               isNotFound
-                ? "Payment not found — please tap PAY NOW once for a fresh payment."
+                ? "Tap PAY NOW again for fresh payment"
                 : "Unable to approve payment right now — please tap PAY NOW again."
             );
             throw new Error(rawMsg);
@@ -628,12 +667,10 @@ export default function App() {
               body: JSON.stringify({
                 paymentId,
                 txid,
-                userUid: activeUser.uid,
+                userUid: piUid,
                 productId: selectedProduct.id,
-                email: safeEmail,
-                name: safeName,
-                phone: safePhone,
-                country: safeCountry,
+                name: piUsername,
+                email: piUid ? `pi-${piUid}@sirwise.store` : undefined,
               }),
             });
             const data = await res.json().catch(() => ({}));
@@ -655,7 +692,7 @@ export default function App() {
               friendlyNoticeSet = true;
               setPiNotice(
                 isNotFound
-                  ? "Payment not found — please tap PAY NOW once for a fresh payment."
+                  ? "Tap PAY NOW again for fresh payment"
                   : "Unable to verify payment completion. Please tap PAY NOW again."
               );
             }
@@ -939,12 +976,6 @@ export default function App() {
   const executePayment = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedProduct) return;
-
-    if (!piInitVerifiedRef.current && !piAuthUser && (!billingName.trim() || !billingEmail.trim() || !billingPhone.trim())) {
-      setPiNotice("Please fill in your legal name, email, and phone number.");
-      return;
-    }
-
     handlePiTestnetPayment();
   };
 
@@ -1790,7 +1821,6 @@ export default function App() {
                           onChange={(e) => setBillingName(e.target.value)}
                           placeholder="e.g. Dr. John Doe"
                           className="w-full bg-black border border-zinc-800 rounded-lg px-3 py-2 text-xs text-white focus:border-[#FFD700] outline-none"
-                          required={!isPiBrowser}
                         />
                       </div>
                       <div>
@@ -1801,7 +1831,6 @@ export default function App() {
                           onChange={(e) => setBillingEmail(e.target.value)}
                           placeholder="john@example.com"
                           className="w-full bg-black border border-zinc-800 rounded-lg px-3 py-2 text-xs text-white focus:border-[#FFD700] outline-none"
-                          required={!isPiBrowser}
                         />
                       </div>
                       <div>
@@ -1812,7 +1841,6 @@ export default function App() {
                           onChange={(e) => setBillingPhone(e.target.value)}
                           placeholder="+234..."
                           className="w-full bg-black border border-zinc-800 rounded-lg px-3 py-2 text-xs text-white focus:border-[#FFD700] outline-none"
-                          required={!isPiBrowser}
                         />
                       </div>
                       <div>
@@ -1823,7 +1851,6 @@ export default function App() {
                           onChange={(e) => setBillingCountry(e.target.value)}
                           placeholder="Country"
                           className="w-full bg-black border border-zinc-800 rounded-lg px-3 py-2 text-xs text-white focus:border-[#FFD700] outline-none"
-                          required={!isPiBrowser}
                         />
                       </div>
                     </div>
@@ -1870,7 +1897,7 @@ export default function App() {
                         )}
                       </div>
 
-                      {piNotice && (
+                      {piNotice && !piNotice.toLowerCase().includes('app studio') && (
                         <div className="p-3 rounded-lg bg-red-950/40 border border-red-500/30 text-[11px] text-red-200 font-sans space-y-2">
                           <p>{piNotice}</p>
                           <button
