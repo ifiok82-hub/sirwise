@@ -173,9 +173,11 @@ export default function App() {
   });
   const [isPiAuthenticating, setIsPiAuthenticating] = useState(false);
   const [piNotice, setPiNotice] = useState('');
+  const [currentPaymentId, setCurrentPaymentId] = useState<string | null>(null);
   const piInitPromiseRef = useRef<Promise<boolean> | null>(null);
   const piInitVerifiedRef = useRef(false);
   const piAuthInFlightRef = useRef(false);
+  const piAuthPromiseRef = useRef<Promise<{ uid: string; username: string } | null> | null>(null);
   const activePaymentIdRef = useRef<string | null>(null);
 
   // True only after Pi.init() receives a Pi Browser / App Studio host bridge response (never user-agent)
@@ -277,27 +279,58 @@ export default function App() {
       .catch(() => {});
   }, []);
 
-  // Handle incomplete payments via authoritative backend handler: complete if txid exists, else cancel
+  const clearAllPaymentState = () => {
+    activePaymentIdRef.current = null;
+    setCurrentPaymentId(null);
+    setIsSubmittingCheckout(false);
+    const staleKeys = [
+      'sirwise_paymentId',
+      'sirwise_pending_payment',
+      'sirwise_last_payment_id',
+      'pi_payment_id',
+      'paymentId',
+    ];
+    for (const k of staleKeys) {
+      try { localStorage.removeItem(k); } catch {}
+      try { sessionStorage.removeItem(k); } catch {}
+    }
+  };
+
+  // Handle incomplete payments: NEVER approve old payment; cancel if no txid, complete if txid exists
   const onIncompletePaymentFound = async (payment: any) => {
     console.warn("Incomplete Pi payment detected:", payment);
     try {
       const paymentId = payment?.identifier;
       const txid = payment?.transaction?.txid;
-      if (!paymentId) return;
+      if (!paymentId) {
+        clearAllPaymentState();
+        return;
+      }
 
-      if (txid && typeof payment?.complete === 'function') {
+      if (!txid) {
+        if (typeof payment?.cancel === 'function') {
+          await Promise.race([
+            Promise.resolve(payment.cancel()),
+            new Promise((resolve) => setTimeout(resolve, 4000)),
+          ]).catch(() => {});
+        }
+        await fetch('/api/pi/cancel', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ paymentId }),
+        }).catch(() => {});
+        clearAllPaymentState();
+        return;
+      }
+
+      if (typeof payment?.complete === 'function') {
         await Promise.race([
           Promise.resolve(payment.complete()),
           new Promise((resolve) => setTimeout(resolve, 4000)),
-        ]);
-      } else if (!txid && typeof payment?.cancel === 'function') {
-        await Promise.race([
-          Promise.resolve(payment.cancel()),
-          new Promise((resolve) => setTimeout(resolve, 4000)),
-        ]);
+        ]).catch(() => {});
       }
 
-      const res = await fetch('/api/pi/incomplete', {
+      const res = await fetch('/api/pi/complete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -319,8 +352,10 @@ export default function App() {
         }
         setPiNotice('Previous incomplete Pi Testnet payment was verified and recovered ✅');
       }
+      clearAllPaymentState();
     } catch (err) {
       console.error("Incomplete Pi payment cleanup error:", err);
+      clearAllPaymentState();
     }
   };
 
@@ -375,7 +410,21 @@ export default function App() {
 
   // Unified Pi authentication -> immediately POST ONLY { accessToken } to App Studio login endpoint
   const authenticateWithPi = async (interactive = false, scopes: string[] = ['username']) => {
-    if (piAuthInFlightRef.current) return null;
+    if (piAuthInFlightRef.current) {
+      if (!interactive) {
+        return piAuthPromiseRef.current ? piAuthPromiseRef.current : null;
+      }
+      if (piAuthPromiseRef.current) {
+        await Promise.race([
+          piAuthPromiseRef.current,
+          new Promise((resolve) => setTimeout(resolve, 2500)),
+        ]).catch(() => {});
+      }
+      if (piAuthInFlightRef.current && !scopes.includes('payments')) {
+        return piAuthPromiseRef.current ? piAuthPromiseRef.current : null;
+      }
+    }
+
     const ready = await ensurePiInit(interactive);
     if (!(window as any).Pi || (!interactive && !ready)) {
       if (interactive) {
@@ -384,72 +433,78 @@ export default function App() {
       return null;
     }
 
-    piAuthInFlightRef.current = true;
-    setIsPiAuthenticating(true);
-    setPiNotice('');
-    try {
-      const Pi = (window as any).Pi;
-      const auth = await Pi.authenticate(scopes, onIncompletePaymentFound);
-      const accessToken = auth?.accessToken;
-      if (!accessToken) {
-        throw new Error("Missing Pi accessToken");
-      }
-
-      // Immediately POST ONLY { accessToken } to App Studio (never send username, uid, or extra fields)
-      const res = await fetch('https://backend.appstudio-u7cm9zhmha0ruwv8.piappengine.com/pi/auth/v1/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ accessToken }),
-      });
-
-      if (!res.ok) {
-        console.log("AppStudio auth failed", res.status);
-        throw new Error("App Studio authentication failed");
-      }
-
-      const data = await res.json();
-      const verifiedUid = data?.user?.uid;
-      const verifiedUsername = data?.user?.username;
-
-      if (!verifiedUid || !verifiedUsername) {
-        console.log("AppStudio auth failed", "Missing verified user identity");
-        throw new Error("Invalid App Studio user identity response");
-      }
-
-      console.log("AppStudio auth sent");
-
-      // Only trust uid/username returned by App Studio; never display username publicly
-      const verifiedUser = {
-        uid: String(verifiedUid),
-        username: String(verifiedUsername),
-      };
-      setPiAuthUser(verifiedUser);
+    const authPromise = (async () => {
+      piAuthInFlightRef.current = true;
+      setIsPiAuthenticating(true);
+      setPiNotice('');
       try {
-        localStorage.setItem(
-          'sirwise_pi_user',
-          JSON.stringify({ ...verifiedUser, verifiedAt: Date.now() })
-        );
-      } catch {}
+        const Pi = (window as any).Pi;
+        const auth = await Pi.authenticate(scopes, onIncompletePaymentFound);
+        const accessToken = auth?.accessToken;
+        if (!accessToken) {
+          throw new Error("Missing Pi accessToken");
+        }
 
-      const payload = {
-        type: 'PI_AUTH_SUCCESS',
-        user: { uid: verifiedUser.uid },
-        accessToken,
-      };
-      try { window.parent.postMessage(payload, '*'); } catch {}
-      try { window.postMessage(payload, '*'); } catch {}
+        // Immediately POST ONLY { accessToken } to App Studio (never send username, uid, or extra fields)
+        const res = await fetch('https://backend.appstudio-u7cm9zhmha0ruwv8.piappengine.com/pi/auth/v1/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ accessToken }),
+        });
 
-      return verifiedUser;
-    } catch (err: any) {
-      console.log("AppStudio auth failed", err);
-      if (interactive) {
-        setPiNotice(err?.message || "Pi sign-in was cancelled or could not be verified.");
+        if (!res.ok) {
+          console.log("AppStudio auth failed", res.status);
+          throw new Error("App Studio authentication failed");
+        }
+
+        const data = await res.json();
+        const verifiedUid = data?.user?.uid;
+        const verifiedUsername = data?.user?.username;
+
+        if (!verifiedUid || !verifiedUsername) {
+          console.log("AppStudio auth failed", "Missing verified user identity");
+          throw new Error("Invalid App Studio user identity response");
+        }
+
+        console.log("AppStudio auth sent");
+
+        // Only trust uid/username returned by App Studio; never display username publicly
+        const verifiedUser = {
+          uid: String(verifiedUid),
+          username: String(verifiedUsername),
+        };
+        setPiAuthUser(verifiedUser);
+        try {
+          localStorage.setItem(
+            'sirwise_pi_user',
+            JSON.stringify({ ...verifiedUser, verifiedAt: Date.now() })
+          );
+        } catch {}
+
+        const payload = {
+          type: 'PI_AUTH_SUCCESS',
+          user: { uid: verifiedUser.uid },
+          accessToken,
+        };
+        try { window.parent.postMessage(payload, '*'); } catch {}
+        try { window.postMessage(payload, '*'); } catch {}
+
+        return verifiedUser;
+      } catch (err: any) {
+        console.log("AppStudio auth failed", err);
+        if (interactive) {
+          setPiNotice(err?.message || "Pi sign-in was cancelled or could not be verified.");
+        }
+        return null;
+      } finally {
+        piAuthInFlightRef.current = false;
+        piAuthPromiseRef.current = null;
+        setIsPiAuthenticating(false);
       }
-      return null;
-    } finally {
-      piAuthInFlightRef.current = false;
-      setIsPiAuthenticating(false);
-    }
+    })();
+
+    piAuthPromiseRef.current = authPromise;
+    return authPromise;
   };
 
   // On page load: if window.Pi exists, await Pi.init({ version: "2.0" }) and auto-run Pi.authenticate(["username"], onIncompletePaymentFound)
@@ -475,46 +530,36 @@ export default function App() {
     await authenticateWithPi(true, ['username']);
   };
 
-  const clearStoredPaymentIds = () => {
-    const staleKeys = ['sirwise_last_payment_id', 'pi_payment_id', 'paymentId', 'sirwise_pending_payment'];
-    for (const k of staleKeys) {
-      try { localStorage.removeItem(k); } catch {}
-      try { sessionStorage.removeItem(k); } catch {}
-    }
-  };
-
   // Pi Testnet (Sandbox) User-to-App (U2A) Payment execution — Test-Pi Only
-  const handlePiTestnetPayment = async (retryAttempt = 0) => {
+  const handlePiTestnetPayment = async () => {
     if (!selectedProduct) return;
-    if (retryAttempt === 0) {
-      setPiNotice('');
-    }
-    clearStoredPaymentIds();
 
-    // Cancel any previous in-flight payment if user tapped PAY NOW twice
-    if (activePaymentIdRef.current) {
-      const prevPaymentId = activePaymentIdRef.current;
-      activePaymentIdRef.current = null;
-      await fetch('/api/pi/cancel', {
+    const prevPaymentId = activePaymentIdRef.current || currentPaymentId;
+    clearAllPaymentState();
+    setPiNotice('');
+
+    // Cancel any previous leftover payment in the background before starting a fresh one
+    if (prevPaymentId) {
+      fetch('/api/pi/cancel', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ paymentId: prevPaymentId }),
       }).catch(() => {});
     }
 
-    await ensurePiInit(true);
-    if (!(window as any).Pi || !(window as any).Pi.createPayment) {
-      setPiNotice("Open this page inside Pi Browser to complete Pi payment.");
-      return;
-    }
+    setIsSubmittingCheckout(true);
+    let friendlyNoticeSet = false;
 
     try {
-      setIsSubmittingCheckout(true);
+      await ensurePiInit(true);
+      if (!(window as any).Pi || !(window as any).Pi.createPayment) {
+        setPiNotice("Open this page inside Pi Browser to complete Pi payment.");
+        return;
+      }
 
-      // Step 1: Authenticate with payments scope before creating fresh payment
+      // Fresh Pi.authenticate with payments scope clears/cancels any incomplete payment before createPayment
       const activeUser = await authenticateWithPi(true, ['username', 'payments']);
       if (!activeUser) {
-        setIsSubmittingCheckout(false);
         return;
       }
 
@@ -524,12 +569,11 @@ export default function App() {
       const safeEmail = billingEmail.trim() || `partner-${activeUser.uid.slice(0, 8)}@sirwise.store`;
       const safePhone = billingPhone.trim() || '+2348000000000';
       const safeCountry = billingCountry.trim() || 'Global';
-      let retryingFreshPayment = false;
 
       await Pi.createPayment({
         amount: testPiAmount,
         memo: `SIRWISE Test: ${selectedProduct.name}`.slice(0, 28),
-        metadata: { 
+        metadata: {
           productId: selectedProduct.id,
           isTestnet: true,
           appletId: "b4e2e629-1b9d-44d2-9e47-2e2b931c8f3f"
@@ -537,6 +581,7 @@ export default function App() {
       }, {
         onReadyForServerApproval: async (paymentId: string) => {
           activePaymentIdRef.current = paymentId;
+          setCurrentPaymentId(paymentId);
           console.log("Approve called", paymentId);
           const res = await fetch('/api/pi/approve', {
             method: 'POST',
@@ -551,7 +596,7 @@ export default function App() {
           if (!res.ok || !data?.success) {
             const rawMsg = data?.error || `HTTP ${res.status}`;
             console.error("Approve failed", paymentId, res.status, rawMsg);
-            activePaymentIdRef.current = null;
+            clearAllPaymentState();
             fetch('/api/pi/cancel', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -563,27 +608,19 @@ export default function App() {
               data?.code === 'payment_not_found' ||
               String(rawMsg).toLowerCase().includes('payment_not_found');
 
-            if (isNotFound && retryAttempt === 0) {
-              console.warn("Payment lookup returned 404; auto-creating a fresh Pi payment.");
-              retryingFreshPayment = true;
-              setTimeout(() => {
-                handlePiTestnetPayment(1);
-              }, 150);
-              throw new Error('PAYMENT_NOT_FOUND_RETRYING');
-            }
-
+            friendlyNoticeSet = true;
             setPiNotice(
               isNotFound
-                ? "Payment not found — please tap PAY NOW again for a fresh payment."
+                ? "Payment not found — please tap PAY NOW once for a fresh payment."
                 : "Unable to approve payment right now — please tap PAY NOW again."
             );
-            setIsSubmittingCheckout(false);
             throw new Error(rawMsg);
           }
           console.log("Approve success", paymentId);
         },
         onReadyForServerCompletion: async (paymentId: string, txid: string) => {
           activePaymentIdRef.current = null;
+          setCurrentPaymentId(null);
           try {
             const res = await fetch('/api/pi/complete', {
               method: 'POST',
@@ -615,22 +652,24 @@ export default function App() {
             } else {
               console.error("Pi complete failed", paymentId, res.status, data?.error);
               const isNotFound = res.status === 404 || String(data?.error || '').toLowerCase().includes('payment_not_found');
+              friendlyNoticeSet = true;
               setPiNotice(
                 isNotFound
-                  ? "Payment not found — please tap PAY NOW again for a fresh payment."
-                  : "Unable to verify payment completion. Please try again."
+                  ? "Payment not found — please tap PAY NOW once for a fresh payment."
+                  : "Unable to verify payment completion. Please tap PAY NOW again."
               );
             }
           } catch (err) {
             console.error("Pi complete request error:", err);
+            friendlyNoticeSet = true;
             setPiNotice('Network error while confirming completion. Reopen in Pi Browser to resume automatically.');
           } finally {
-            setIsSubmittingCheckout(false);
+            clearAllPaymentState();
           }
         },
         onCancel: async (paymentId: string) => {
           console.log("Pi payment cancelled by user:", paymentId);
-          activePaymentIdRef.current = null;
+          clearAllPaymentState();
           if (paymentId) {
             fetch('/api/pi/cancel', {
               method: 'POST',
@@ -638,28 +677,23 @@ export default function App() {
               body: JSON.stringify({ paymentId })
             }).catch(() => {});
           }
-          if (!retryingFreshPayment) {
-            setIsSubmittingCheckout(false);
-          }
         },
-        onError: (error: any) => { 
-          activePaymentIdRef.current = null;
-          if (error?.message === 'PAYMENT_NOT_FOUND_RETRYING' || retryingFreshPayment) {
-            return;
-          }
+        onError: (error: any) => {
           console.error("Pi payment error:", error);
-          setIsSubmittingCheckout(false);
-          setPiNotice("Pi Testnet payment could not be completed — please tap PAY NOW again for a fresh payment.");
+          clearAllPaymentState();
+          if (!friendlyNoticeSet) {
+            setPiNotice("Please tap PAY NOW again");
+          }
         },
       });
     } catch (err: any) {
-      if (err?.message === 'PAYMENT_NOT_FOUND_RETRYING') {
-        return;
-      }
-      activePaymentIdRef.current = null;
       console.error("Pi Payment error:", err);
+      clearAllPaymentState();
+      if (!friendlyNoticeSet) {
+        setPiNotice("Please tap PAY NOW again");
+      }
+    } finally {
       setIsSubmittingCheckout(false);
-      setPiNotice("Unable to complete Pi payment — please tap PAY NOW again.");
     }
   };
 
@@ -880,6 +914,7 @@ export default function App() {
 
   // Launch Checkout Modal
   const handleBuyClick = (product: DigitalProduct) => {
+    clearAllPaymentState();
     setSelectedProduct(product);
     setCheckoutModalOpen(true);
     setCheckoutStatus(null);
@@ -892,6 +927,14 @@ export default function App() {
     setSelectedGateway('pi_testnet');
   };
 
+  const handleDismissCheckoutError = () => {
+    clearAllPaymentState();
+    setPiNotice('');
+    setCheckoutStatus(null);
+    setCheckoutModalOpen(false);
+    setSelectedProduct(null);
+  };
+
   // Perform Pi Testnet Payment
   const executePayment = (e: React.FormEvent) => {
     e.preventDefault();
@@ -902,7 +945,7 @@ export default function App() {
       return;
     }
 
-    handlePiTestnetPayment(0);
+    handlePiTestnetPayment();
   };
 
   // Filter products by active category
@@ -1683,7 +1726,8 @@ export default function App() {
                 </p>
               </div>
               <button 
-                onClick={() => setCheckoutModalOpen(false)}
+                type="button"
+                onClick={handleDismissCheckoutError}
                 className="p-1.5 rounded-full hover:bg-zinc-900 border border-zinc-800 text-slate-400 hover:text-white transition"
               >
                 <X className="w-5 h-5" />
@@ -1827,8 +1871,15 @@ export default function App() {
                       </div>
 
                       {piNotice && (
-                        <div className="p-2.5 rounded-lg bg-red-950/40 border border-red-500/30 text-[11px] text-red-200 font-sans">
-                          {piNotice}
+                        <div className="p-3 rounded-lg bg-red-950/40 border border-red-500/30 text-[11px] text-red-200 font-sans space-y-2">
+                          <p>{piNotice}</p>
+                          <button
+                            type="button"
+                            onClick={handleDismissCheckoutError}
+                            className="px-3 py-1.5 bg-red-500/20 hover:bg-red-500/30 border border-red-400/40 text-red-100 font-bold text-[10px] rounded-md uppercase font-montserrat transition"
+                          >
+                            Dismiss
+                          </button>
                         </div>
                       )}
                     </div>
@@ -1847,13 +1898,13 @@ export default function App() {
                     <button
                       type="submit"
                       disabled={isSubmittingCheckout}
-                      className="flex-1 py-3.5 bg-[#FFD700] hover:bg-yellow-400 text-[#0B132B] font-black text-xs rounded-xl tracking-wider uppercase transition duration-200 shadow-lg shadow-yellow-500/20 hover:-translate-y-0.5 hover:shadow-yellow-500/40 font-montserrat"
+                      className="flex-1 py-3.5 bg-[#FFD700] hover:bg-yellow-400 disabled:opacity-60 disabled:cursor-not-allowed text-[#0B132B] font-black text-xs rounded-xl tracking-wider uppercase transition duration-200 shadow-lg shadow-yellow-500/20 hover:-translate-y-0.5 hover:shadow-yellow-500/40 font-montserrat"
                     >
                       {isSubmittingCheckout ? 'Verifying Transaction...' : 'Pay Now'}
                     </button>
                     <button
                       type="button"
-                      onClick={() => setCheckoutModalOpen(false)}
+                      onClick={handleDismissCheckoutError}
                       className="px-6 py-3.5 bg-transparent border border-zinc-700 hover:border-zinc-500 text-slate-300 font-bold text-xs rounded-xl uppercase transition font-montserrat"
                     >
                       Cancel
