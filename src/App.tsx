@@ -176,6 +176,7 @@ export default function App() {
   const piInitPromiseRef = useRef<Promise<boolean> | null>(null);
   const piInitVerifiedRef = useRef(false);
   const piAuthInFlightRef = useRef(false);
+  const activePaymentIdRef = useRef<string | null>(null);
 
   // True only after Pi.init() receives a Pi Browser / App Studio host bridge response (never user-agent)
   const [isPiBrowser, setIsPiBrowser] = useState<boolean>(false);
@@ -474,10 +475,32 @@ export default function App() {
     await authenticateWithPi(true, ['username']);
   };
 
+  const clearStoredPaymentIds = () => {
+    const staleKeys = ['sirwise_last_payment_id', 'pi_payment_id', 'paymentId', 'sirwise_pending_payment'];
+    for (const k of staleKeys) {
+      try { localStorage.removeItem(k); } catch {}
+      try { sessionStorage.removeItem(k); } catch {}
+    }
+  };
+
   // Pi Testnet (Sandbox) User-to-App (U2A) Payment execution — Test-Pi Only
-  const handlePiTestnetPayment = async () => {
+  const handlePiTestnetPayment = async (retryAttempt = 0) => {
     if (!selectedProduct) return;
-    setPiNotice('');
+    if (retryAttempt === 0) {
+      setPiNotice('');
+    }
+    clearStoredPaymentIds();
+
+    // Cancel any previous in-flight payment if user tapped PAY NOW twice
+    if (activePaymentIdRef.current) {
+      const prevPaymentId = activePaymentIdRef.current;
+      activePaymentIdRef.current = null;
+      await fetch('/api/pi/cancel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paymentId: prevPaymentId }),
+      }).catch(() => {});
+    }
 
     await ensurePiInit(true);
     if (!(window as any).Pi || !(window as any).Pi.createPayment) {
@@ -488,7 +511,7 @@ export default function App() {
     try {
       setIsSubmittingCheckout(true);
 
-      // Step 1: Authenticate with payments scope before creating payment
+      // Step 1: Authenticate with payments scope before creating fresh payment
       const activeUser = await authenticateWithPi(true, ['username', 'payments']);
       if (!activeUser) {
         setIsSubmittingCheckout(false);
@@ -501,6 +524,7 @@ export default function App() {
       const safeEmail = billingEmail.trim() || `partner-${activeUser.uid.slice(0, 8)}@sirwise.store`;
       const safePhone = billingPhone.trim() || '+2348000000000';
       const safeCountry = billingCountry.trim() || 'Global';
+      let retryingFreshPayment = false;
 
       await Pi.createPayment({
         amount: testPiAmount,
@@ -512,6 +536,7 @@ export default function App() {
         },
       }, {
         onReadyForServerApproval: async (paymentId: string) => {
+          activePaymentIdRef.current = paymentId;
           console.log("Approve called", paymentId);
           const res = await fetch('/api/pi/approve', {
             method: 'POST',
@@ -524,15 +549,41 @@ export default function App() {
           });
           const data = await res.json().catch(() => ({}));
           if (!res.ok || !data?.success) {
-            const msg = data?.error || 'Server payment approval rejected.';
-            console.error("Approve failed", paymentId, msg);
-            setPiNotice(msg);
+            const rawMsg = data?.error || `HTTP ${res.status}`;
+            console.error("Approve failed", paymentId, res.status, rawMsg);
+            activePaymentIdRef.current = null;
+            fetch('/api/pi/cancel', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ paymentId }),
+            }).catch(() => {});
+
+            const isNotFound =
+              res.status === 404 ||
+              data?.code === 'payment_not_found' ||
+              String(rawMsg).toLowerCase().includes('payment_not_found');
+
+            if (isNotFound && retryAttempt === 0) {
+              console.warn("Payment lookup returned 404; auto-creating a fresh Pi payment.");
+              retryingFreshPayment = true;
+              setTimeout(() => {
+                handlePiTestnetPayment(1);
+              }, 150);
+              throw new Error('PAYMENT_NOT_FOUND_RETRYING');
+            }
+
+            setPiNotice(
+              isNotFound
+                ? "Payment not found — please tap PAY NOW again for a fresh payment."
+                : "Unable to approve payment right now — please tap PAY NOW again."
+            );
             setIsSubmittingCheckout(false);
-            throw new Error(msg);
+            throw new Error(rawMsg);
           }
           console.log("Approve success", paymentId);
         },
         onReadyForServerCompletion: async (paymentId: string, txid: string) => {
+          activePaymentIdRef.current = null;
           try {
             const res = await fetch('/api/pi/complete', {
               method: 'POST',
@@ -562,17 +613,24 @@ export default function App() {
                 try { localStorage.setItem('sirwise_hub_user', JSON.stringify({ ...data.user, isLoggedIn: true })); } catch {}
               }
             } else {
-              setPiNotice(data?.error || 'Server payment verification failed. Access remains locked.');
+              console.error("Pi complete failed", paymentId, res.status, data?.error);
+              const isNotFound = res.status === 404 || String(data?.error || '').toLowerCase().includes('payment_not_found');
+              setPiNotice(
+                isNotFound
+                  ? "Payment not found — please tap PAY NOW again for a fresh payment."
+                  : "Unable to verify payment completion. Please try again."
+              );
             }
           } catch (err) {
             console.error("Pi complete request error:", err);
-            setPiNotice('Network error while confirming Pi completion. Reopen in Pi Browser to resume automatically.');
+            setPiNotice('Network error while confirming completion. Reopen in Pi Browser to resume automatically.');
           } finally {
             setIsSubmittingCheckout(false);
           }
         },
         onCancel: async (paymentId: string) => {
           console.log("Pi payment cancelled by user:", paymentId);
+          activePaymentIdRef.current = null;
           if (paymentId) {
             fetch('/api/pi/cancel', {
               method: 'POST',
@@ -580,18 +638,28 @@ export default function App() {
               body: JSON.stringify({ paymentId })
             }).catch(() => {});
           }
-          setIsSubmittingCheckout(false);
+          if (!retryingFreshPayment) {
+            setIsSubmittingCheckout(false);
+          }
         },
         onError: (error: any) => { 
+          activePaymentIdRef.current = null;
+          if (error?.message === 'PAYMENT_NOT_FOUND_RETRYING' || retryingFreshPayment) {
+            return;
+          }
           console.error("Pi payment error:", error);
           setIsSubmittingCheckout(false);
-          setPiNotice(error?.message || "Pi Testnet transaction encountered a network error.");
+          setPiNotice("Pi Testnet payment could not be completed — please tap PAY NOW again for a fresh payment.");
         },
       });
     } catch (err: any) {
+      if (err?.message === 'PAYMENT_NOT_FOUND_RETRYING') {
+        return;
+      }
+      activePaymentIdRef.current = null;
       console.error("Pi Payment error:", err);
       setIsSubmittingCheckout(false);
-      setPiNotice(err?.message || "Unable to complete Pi payment request.");
+      setPiNotice("Unable to complete Pi payment — please tap PAY NOW again.");
     }
   };
 
@@ -676,7 +744,7 @@ export default function App() {
     try {
       const res = await fetch('/api/config');
       const cfg = await res.json().catch(() => ({}));
-      const configured = Boolean(cfg?.PI_NETWORK_API_KEY_CONFIGURED || cfg?.PI_API_KEY_CONFIGURED);
+      const configured = Boolean(cfg?.PI_NETWORK_API_KEY_CONFIGURED);
       setDeveloperNotice(
         configured
           ? "Server PI_NETWORK_API_KEY is configured ✅. Open /admin inside Pi Browser to test a live 1 Test-Pi U2A payment."
@@ -834,7 +902,7 @@ export default function App() {
       return;
     }
 
-    handlePiTestnetPayment();
+    handlePiTestnetPayment(0);
   };
 
   // Filter products by active category

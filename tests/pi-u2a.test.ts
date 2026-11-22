@@ -314,3 +314,36 @@ test('admin diagnostic payment (1 Pi) never unlocks storefront entitlements', as
   assert.equal(res.body.entitlementGranted, false);
   assert.equal(store.read().entitlements?.length, 0);
 });
+
+test('uses PI_NETWORK_API_KEY exclusively (never shadowed by PI_API_KEY) and emits payment_not_found on 404', async () => {
+  const prevNet = process.env.PI_NETWORK_API_KEY;
+  const prevLegacy = process.env.PI_API_KEY;
+  process.env.PI_NETWORK_API_KEY = TEST_ONLY_KEY;
+  process.env.PI_API_KEY = 'stale-wrong-app-key';
+
+  try {
+    const store = createMemoryStore();
+    const seenAuthHeaders: string[] = [];
+    const fetchImpl = (async (_url: RequestInfo | URL, init?: RequestInit) => {
+      seenAuthHeaders.push(String((init?.headers as Record<string, string>)?.Authorization || ''));
+      return new Response(
+        JSON.stringify({ error: 'payment_not_found', error_message: 'No payment found with this identifier' }),
+        { status: 404 }
+      );
+    }) as typeof fetch;
+
+    const res = await approvePiPayment(
+      { paymentId: 'pay_from_other_domain', productIdHint: 'prod-course-mba' },
+      { fetchImpl, getDb: store.getDb, saveDb: store.saveDb, getProducts: getProductsList }
+    );
+    assert.equal(seenAuthHeaders[0], `Key ${TEST_ONLY_KEY}`);
+    assert.equal(res.httpStatus, 404);
+    assert.equal(res.body.code, 'payment_not_found');
+  } finally {
+    if (prevNet === undefined) delete process.env.PI_NETWORK_API_KEY;
+    else process.env.PI_NETWORK_API_KEY = prevNet;
+    if (prevLegacy === undefined) delete process.env.PI_API_KEY;
+    else process.env.PI_API_KEY = prevLegacy;
+  }
+});
+

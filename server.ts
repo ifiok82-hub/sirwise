@@ -530,13 +530,12 @@ app.post('/api/admin/users/status', (req: Request, res: Response) => {
 
 // Clean dynamic config response
 app.get('/api/config', (req: Request, res: Response) => {
-  const configured = Boolean((process.env.PI_NETWORK_API_KEY || process.env.PI_API_KEY || '').trim());
+  const configured = Boolean((process.env.PI_NETWORK_API_KEY || '').trim());
   res.json({
     SYSTEM_MODE: 'VERIFICATION_ONLY',
     PLATFORM: 'SIRWISE Global Digital Hub',
     CHARTER: 'RC BN3583778',
     PI_TESTNET_ENABLED: true,
-    PI_API_KEY_CONFIGURED: configured,
     PI_NETWORK_API_KEY_CONFIGURED: configured,
     VALIDATION_KEY: process.env.VALIDATION_KEY || 'f1d2fd990366c6095405cabec435395ab465da166fa9a20d93eb95175cafee6ef988eddcf245344be1f69b19b70712896cd5ce371bf0a8da46ff77f0b5000bc1'
   });

@@ -46,12 +46,9 @@ export interface PiActionResult {
 
 function resolveApiKey(deps?: PiServiceDeps): string {
   if (deps && typeof deps.apiKey === 'string') return deps.apiKey;
-  const candidates = [process.env.PI_API_KEY, process.env.PI_NETWORK_API_KEY];
-  for (const raw of candidates) {
-    const trimmed = String(raw || '').trim();
-    if (trimmed && !isPlaceholderKey(trimmed)) {
-      return trimmed;
-    }
+  const raw = String(process.env.PI_NETWORK_API_KEY || '').trim();
+  if (raw && !isPlaceholderKey(raw)) {
+    return raw;
   }
   return '';
 }
@@ -197,10 +194,10 @@ export async function approvePiPayment(
 
   const apiKey = resolveApiKey(deps);
   if (isPlaceholderKey(apiKey)) {
-    console.error('Approve failed', 'Server PI_API_KEY / PI_NETWORK_API_KEY is not configured');
+    console.error('Approve failed', 'Server PI_NETWORK_API_KEY is not configured');
     return {
       httpStatus: 500,
-      body: { success: false, error: 'Server PI_API_KEY / PI_NETWORK_API_KEY is not configured' },
+      body: { success: false, error: 'Server PI_NETWORK_API_KEY is not configured' },
     };
   }
 
@@ -212,7 +209,14 @@ export async function approvePiPayment(
   const lookup = await fetchPiPayment(paymentId, apiKey, fetchImpl);
   if (!lookup.ok) {
     console.error('Approve failed', paymentId, lookup.error);
-    return { httpStatus: lookup.httpStatus, body: { success: false, error: lookup.error } };
+    return {
+      httpStatus: lookup.httpStatus,
+      body: {
+        success: false,
+        ...(lookup.httpStatus === 404 ? { code: 'payment_not_found' } : {}),
+        error: lookup.error,
+      },
+    };
   }
   const payment = lookup.payment;
 
